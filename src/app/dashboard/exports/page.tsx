@@ -17,14 +17,54 @@ import { Button } from "@/components/ui/Button";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 
-import { collection, getDocs, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, query, orderBy, onSnapshot, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import toast from "react-hot-toast";
+import { useAuth } from "@/context/AuthContext";
+import { logAction } from "@/lib/audit";
+import { useEffect } from "react";
 
 export default function ExportsPage() {
+  const { profile } = useAuth();
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
   const [lastExport, setLastExport] = useState<{format: string, date: string} | null>(null);
   const container = useRef<HTMLDivElement>(null);
+
+  // Filter states
+  const [selectedPeriod, setSelectedPeriod] = useState("Mois en cours");
+  const [selectedCompany, setSelectedCompany] = useState("Toutes les entreprises");
+  const [companies, setCompanies] = useState<string[]>([]);
+  const [checkedFields, setCheckedFields] = useState<Record<string, boolean>>({
+    "Chiffre d'affaires": true,
+    "Recouvrements": true,
+    "Clients": true,
+    "Modes de paiement": true
+  });
+  const [currency, setCurrency] = useState("FCFA");
+
+  // Load custom enterprise settings
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "settings", "enterprise"), (docSnap) => {
+      if (docSnap.exists()) {
+        setCurrency(docSnap.data().currency || "FCFA");
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Load companies dynamically from Firestore
+  useEffect(() => {
+    const q = query(collection(db, "companies"), orderBy("name", "asc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = snapshot.docs.map(doc => doc.data().name as string);
+      setCompanies(list);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const toggleField = (field: string) => {
+    setCheckedFields(prev => ({ ...prev, [field]: !prev[field] }));
+  };
 
   useGSAP(() => {
     const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
@@ -39,9 +79,9 @@ export default function ExportsPage() {
   }, { scope: container });
 
   const fetchEntries = async () => {
-    const q = query(collection(db, "daily_entries"), orderBy("createdAt", "desc"));
+    const q = query(collection(db, "daily_entries"), orderBy("date", "desc"));
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => {
+    const allEntries = snapshot.docs.map(doc => {
       const data = doc.data();
       const total = Number(data.totalAmount || 0);
       const paid = Number(data.paidAmount || 0);
@@ -51,8 +91,41 @@ export default function ExportsPage() {
         totalAmount: total,
         paidAmount: paid,
         resteAVerser: total - paid
-      };
+      } as any;
     });
+
+    // 1. Filter by Company
+    let filtered = allEntries;
+    if (selectedCompany !== "Toutes les entreprises") {
+      filtered = filtered.filter(e => e.companyId === selectedCompany);
+    }
+
+    // 2. Filter by Period
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOf60Days = new Date();
+    startOf60Days.setDate(now.getDate() - 60);
+    const currentQuarter = Math.floor(now.getMonth() / 3);
+    const startOfQuarter = new Date(now.getFullYear(), currentQuarter * 3, 1);
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+    filtered = filtered.filter(e => {
+      const dateVal = e.date ? new Date(e.date) : (e.createdAt ? new Date(e.createdAt) : null);
+      if (!dateVal) return true;
+
+      if (selectedPeriod === "Mois en cours") {
+        return dateVal >= startOfMonth;
+      } else if (selectedPeriod === "60 derniers jours") {
+        return dateVal >= startOf60Days;
+      } else if (selectedPeriod === "Trimestre en cours") {
+        return dateVal >= startOfQuarter;
+      } else if (selectedPeriod === "Année " + now.getFullYear()) {
+        return dateVal >= startOfYear;
+      }
+      return true; // Toutes les données
+    });
+
+    return filtered;
   };
 
   const handleExportPDF = async () => {
@@ -71,30 +144,53 @@ export default function ExportsPage() {
       doc.setFillColor(92, 61, 46);
       doc.rect(0, 0, 210, 40, 'F');
       doc.setTextColor(255, 255, 255);
-      doc.setFontSize(22);
-      doc.text("NYA BLO — RAPPORT D'ACTIVITÉ", 14, 20);
-      doc.setFontSize(10);
-      doc.text(`Généré le: ${new Date().toLocaleString('fr-FR')}`, 14, 32);
+      doc.setFontSize(18);
+      doc.text(`NYA BLO — RAPPORT D'ACTIVITÉ`, 14, 18);
+      doc.setFontSize(9);
+      doc.text(`Filtres : Filiale = ${selectedCompany} | Période = ${selectedPeriod}`, 14, 26);
+      doc.text(`Généré le : ${new Date().toLocaleString('fr-FR')}`, 14, 32);
       doc.setTextColor(0, 0, 0);
 
-      const tableData = data.map((e: Record<string, unknown>) => [
-        e.date ? String(e.date) : (e.createdAt ? new Date(String(e.createdAt)).toLocaleDateString('fr-FR') : "N/A"),
-        String(e.clientName || "N/A"),
-        String(e.companyId || "N/A"),
-        `${Number(e.totalAmount).toLocaleString()} FCFA`,
-        `${Number(e.paidAmount).toLocaleString()} FCFA`,
-        `${Number(e.resteAVerser).toLocaleString()} FCFA`
-      ]);
+      // Build Headers & Data dynamically based on checked fields
+      const headers = ['Date', 'Filiale'];
+      if (checkedFields["Clients"]) headers.push('Client');
+      if (checkedFields["Chiffre d'affaires"]) headers.push('Total');
+      if (checkedFields["Recouvrements"]) {
+        headers.push('Versé');
+        headers.push('Reste');
+      }
+      if (checkedFields["Modes de paiement"]) {
+        headers.push('Paiement');
+        headers.push('Canal');
+      }
+
+      const tableData = data.map((e: any) => {
+        const row = [];
+        row.push(e.date ? new Date(e.date).toLocaleDateString('fr-FR') : "N/A");
+        row.push(String(e.companyId || "N/A"));
+        
+        if (checkedFields["Clients"]) row.push(String(e.clientName || "N/A"));
+        if (checkedFields["Chiffre d'affaires"]) row.push(`${Number(e.totalAmount).toLocaleString()} ${currency}`);
+        if (checkedFields["Recouvrements"]) {
+          row.push(`${Number(e.paidAmount).toLocaleString()} ${currency}`);
+          row.push(`${Number(e.resteAVerser).toLocaleString()} ${currency}`);
+        }
+        if (checkedFields["Modes de paiement"]) {
+          row.push(String(e.modePaiement || "Espèces"));
+          row.push(String(e.canal || "Direct"));
+        }
+        return row;
+      });
 
       // Use autoTable via the plugin
       (doc as unknown as Record<string, CallableFunction>).autoTable({
         startY: 50,
-        head: [['Date', 'Client', 'Filiale', 'Total', 'Versé', 'Reste']],
+        head: [headers],
         body: tableData,
         theme: 'striped',
-        headStyles: { fillColor: [92, 61, 46], fontSize: 9, fontStyle: 'bold' },
+        headStyles: { fillColor: [92, 61, 46], fontSize: 8, fontStyle: 'bold' },
         alternateRowStyles: { fillColor: [250, 243, 224] },
-        styles: { fontSize: 8, cellPadding: 4 },
+        styles: { fontSize: 7, cellPadding: 3 },
         margin: { left: 14, right: 14 }
       });
 
@@ -104,16 +200,28 @@ export default function ExportsPage() {
       const finalY = ((doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY) || 200;
       doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
-      doc.text(`Total Ventes: ${totalVentes.toLocaleString()} FCFA`, 14, finalY + 15);
-      doc.text(`Total Encaissé: ${totalPaid.toLocaleString()} FCFA`, 14, finalY + 22);
-      doc.text(`Reste: ${(totalVentes - totalPaid).toLocaleString()} FCFA`, 14, finalY + 29);
+      
+      let summaryText = "";
+      if (checkedFields["Chiffre d'affaires"]) summaryText += `Total Ventes: ${totalVentes.toLocaleString()} ${currency} | `;
+      if (checkedFields["Recouvrements"]) summaryText += `Total Encaissé: ${totalPaid.toLocaleString()} ${currency} | Reste: ${(totalVentes - totalPaid).toLocaleString()} ${currency}`;
+      
+      doc.text(summaryText, 14, finalY + 15);
 
       doc.save(`NYA_BLO_Rapport_${new Date().toISOString().split('T')[0]}.pdf`);
       setLastExport({ format: "PDF", date: new Date().toLocaleString('fr-FR') });
+      
+      await logAction(
+        profile?.uid,
+        profile?.email,
+        "export_pdf",
+        `Génération du rapport PDF (Période: ${selectedPeriod}, Filiale: ${selectedCompany})`,
+        selectedCompany
+      );
+
       toast.success("✅ Rapport PDF téléchargé avec succès !");
     } catch (error) {
       console.error("PDF Export Error:", error);
-      toast.error("Erreur lors de la génération du PDF. Vérifiez la console.");
+      toast.error("Erreur lors de la génération du PDF.");
     } finally {
       setIsGenerating(null);
     }
@@ -127,31 +235,49 @@ export default function ExportsPage() {
       // Dynamic import
       const XLSX = await import("xlsx");
       
-      const worksheet = XLSX.utils.json_to_sheet(data.map((e: Record<string, unknown>) => ({
-        Date: e.date ? String(e.date) : (e.createdAt ? new Date(String(e.createdAt)).toLocaleString('fr-FR') : "N/A"),
-        Client: String(e.clientName || ""),
-        Entreprise: String(e.companyId || ""),
-        "Total (FCFA)": Number(e.totalAmount),
-        "Versé (FCFA)": Number(e.paidAmount),
-        "Reste (FCFA)": Number(e.resteAVerser),
-        "Mode Paiement": String(e.modePaiement || "Espèces"),
-        Canal: String(e.canalVente || "Direct"),
-        Statut: String(e.status || "pending")
-      })));
-      
+      const worksheetData = data.map((e: any) => {
+        const row: any = {
+          Date: e.date ? new Date(e.date).toLocaleDateString('fr-FR') : "N/A",
+          Entreprise: String(e.companyId || "")
+        };
+        
+        if (checkedFields["Clients"]) {
+          row["Client"] = String(e.clientName || "");
+          row["Contact"] = String(e.clientContact || "");
+          row["Engin"] = String(e.engin || "");
+          row["Motif"] = String(e.motif || "");
+        }
+        if (checkedFields["Chiffre d'affaires"]) {
+          row[`Total (${currency})`] = Number(e.totalAmount);
+        }
+        if (checkedFields["Recouvrements"]) {
+          row[`Versé (${currency})`] = Number(e.paidAmount);
+          row[`Reste (${currency})`] = Number(e.resteAVerser);
+        }
+        if (checkedFields["Modes de paiement"]) {
+          row["Mode Paiement"] = String(e.modePaiement || "Espèces");
+          row["Canal"] = String(e.canal || "Direct");
+        }
+        row["Statut"] = String(e.status || "Confirmé");
+        
+        return row;
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(worksheetData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Activités NYA BLO");
       
-      // Auto-size columns
-      const colWidths = [
-        { wch: 20 }, { wch: 25 }, { wch: 20 }, 
-        { wch: 15 }, { wch: 15 }, { wch: 15 },
-        { wch: 15 }, { wch: 12 }, { wch: 10 }
-      ];
-      worksheet['!cols'] = colWidths;
-      
       XLSX.writeFile(workbook, `NYA_BLO_Archives_${new Date().toISOString().split('T')[0]}.xlsx`);
       setLastExport({ format: "XLSX", date: new Date().toLocaleString('fr-FR') });
+      
+      await logAction(
+        profile?.uid,
+        profile?.email,
+        "export_xlsx",
+        `Génération de l'archive Excel (Période: ${selectedPeriod}, Filiale: ${selectedCompany})`,
+        selectedCompany
+      );
+
       toast.success("✅ Archive Excel téléchargée avec succès !");
     } catch (error) {
       console.error("Excel Export Error:", error);
@@ -237,7 +363,11 @@ export default function ExportsPage() {
                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-2">
                      <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest pl-1">Période</label>
-                     <select className="w-full p-5 rounded-2xl bg-[#FAF3E0]/30 border-2 border-transparent focus:border-[#D4AF37] outline-none font-bold text-[#5C3D2E] appearance-none cursor-pointer">
+                     <select 
+                       value={selectedPeriod}
+                       onChange={(e) => setSelectedPeriod(e.target.value)}
+                       className="w-full p-5 rounded-2xl bg-[#FAF3E0]/30 border-2 border-transparent focus:border-[#D4AF37] outline-none font-bold text-[#5C3D2E] appearance-none cursor-pointer"
+                     >
                         <option>Mois en cours</option>
                         <option>60 derniers jours</option>
                         <option>Trimestre en cours</option>
@@ -247,10 +377,15 @@ export default function ExportsPage() {
                   </div>
                   <div className="space-y-2">
                      <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest pl-1">Entreprise</label>
-                     <select className="w-full p-5 rounded-2xl bg-[#FAF3E0]/30 border-2 border-transparent focus:border-[#D4AF37] outline-none font-bold text-[#5C3D2E] appearance-none cursor-pointer">
-                        <option>Toutes les entreprises</option>
-                        <option>GALF SARL</option>
-                        <option>NB FLOWERS</option>
+                     <select 
+                       value={selectedCompany}
+                       onChange={(e) => setSelectedCompany(e.target.value)}
+                       className="w-full p-5 rounded-2xl bg-[#FAF3E0]/30 border-2 border-transparent focus:border-[#D4AF37] outline-none font-bold text-[#5C3D2E] appearance-none cursor-pointer"
+                     >
+                        <option value="Toutes les entreprises">Toutes les entreprises</option>
+                        {companies.map(name => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
                      </select>
                   </div>
                </div>
@@ -259,8 +394,13 @@ export default function ExportsPage() {
                   <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest pl-1">Données à inclure</label>
                   <div className="flex flex-wrap gap-3">
                      {["Chiffre d'affaires", "Recouvrements", "Clients", "Modes de paiement"].map(tag => (
-                        <label key={tag} className="flex items-center gap-2 bg-[#FAF3E0]/50 px-5 py-3 rounded-2xl border-2 border-transparent hover:border-[#D4AF37]/30 cursor-pointer transition-all has-[:checked]:bg-[#5C3D2E] has-[:checked]:text-white has-[:checked]:border-[#5C3D2E] shadow-sm">
-                           <input type="checkbox" className="hidden" defaultChecked={["Chiffre d'affaires", "Recouvrements"].includes(tag)} />
+                        <label key={tag} className="flex items-center gap-2 bg-[#FAF3E0]/50 px-5 py-3 rounded-2xl border-2 border-transparent hover:border-[#D4AF37]/30 cursor-pointer transition-all has-[input:checked]:bg-[#5C3D2E] has-[input:checked]:text-white has-[input:checked]:border-[#5C3D2E] shadow-sm">
+                           <input 
+                             type="checkbox" 
+                             className="hidden" 
+                             checked={checkedFields[tag] === true}
+                             onChange={() => toggleField(tag)} 
+                           />
                            <span className="text-sm font-bold">{tag}</span>
                         </label>
                      ))}

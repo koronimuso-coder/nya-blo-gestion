@@ -4,10 +4,11 @@ import React, { useRef, useState, useEffect } from "react";
 import { X, Save, Plus, Trash2, Sparkles, Loader2 } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { collection, addDoc, serverTimestamp, getDocs, query, orderBy, doc, increment, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, getDocs, query, orderBy, doc, increment, updateDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import { useAuth } from "@/context/AuthContext";
 import toast from "react-hot-toast";
+import { logAction } from "@/lib/audit";
 
 interface EntryModalProps {
   isOpen: boolean;
@@ -70,6 +71,16 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(false);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [currency, setCurrency] = useState("FCFA");
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "settings", "enterprise"), (docSnap) => {
+      if (docSnap.exists()) {
+        setCurrency(docSnap.data().currency || "FCFA");
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // Common Info
   const [commonData, setCommonData] = useState({
@@ -171,6 +182,22 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
     setLoading(true);
     try {
       await deleteDoc(doc(db, "daily_entries", editEntry.id));
+      
+      // Decrement user's entriesCount
+      const creatorUid = (editEntry as any).createdBy;
+      if (creatorUid) {
+        await updateDoc(doc(db, "users", creatorUid), {
+          entriesCount: increment(-1)
+        }).catch(() => {});
+      }
+
+      await logAction(
+        profile?.uid,
+        profile?.email,
+        "sale_delete",
+        `Suppression de la saisie pour ${editEntry.clientName} (${Number(editEntry.totalAmount).toLocaleString()} ${currency}, filiale: ${editEntry.companyId})`,
+        editEntry.companyId
+      );
       toast.success("Saisie supprimée avec succès !");
       onClose();
     } catch (error) {
@@ -206,6 +233,14 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
           updatedAt: new Date().toISOString()
         });
         
+        await logAction(
+          profile?.uid,
+          profile?.email,
+          "sale_update",
+          `Mise à jour de la saisie pour ${item.clientName} (${total.toLocaleString()} ${currency}, versé: ${paid.toLocaleString()} ${currency})`,
+          commonData.companyId
+        );
+
         toast.success("Saisie mise à jour !");
       } else {
         // Create new entries
@@ -224,7 +259,19 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
             canal: item.canal,
             modePaiement: item.modePaiement,
             createdAt: new Date().toISOString(),
-            serverTimestamp: serverTimestamp()
+            serverTimestamp: serverTimestamp(),
+            createdBy: profile?.uid || "",
+            createdByEmail: profile?.email || "",
+            createdByName: profile?.displayName || "Inconnu"
+          }).then(async (docRef) => {
+            await logAction(
+              profile?.uid,
+              profile?.email,
+              "sale_create",
+              `Création de la saisie pour ${item.clientName} (${total.toLocaleString()} ${currency}, versé: ${paid.toLocaleString()} ${currency})`,
+              commonData.companyId
+            );
+            return docRef;
           });
         });
 

@@ -11,6 +11,10 @@ async function createFirstAdmin(email: string, password: string, displayName: st
     // 2. IMPORTER LE RESTE DYNAMIQUEMENT APRES DOTENV
     const { adminAuth, adminDb } = await import("../lib/firebase/admin");
 
+    if (!adminAuth || !adminDb) {
+      throw new Error("Firebase Admin n'a pas pu être initialisé.");
+    }
+
     if (!process.env.FIREBASE_PROJECT_ID) {
       throw new Error("FIREBASE_PROJECT_ID est toujours manquant !");
     }

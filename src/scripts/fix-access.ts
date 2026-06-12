@@ -7,6 +7,9 @@ async function fixUserAccess() {
   const uid = "varFJ7WjNlYc6liKXcrqkZAelHW2";
   try {
     const { adminDb } = await import("../lib/firebase/admin");
+    if (!adminDb) {
+      throw new Error("Firebase Admin n'a pas pu être initialisé.");
+    }
     await adminDb.collection("users").doc(uid).set({
       email: "admin@nyablo.com",
       displayName: "Grand Administrateur Dogon",

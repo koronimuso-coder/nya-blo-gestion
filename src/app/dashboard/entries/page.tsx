@@ -18,9 +18,11 @@ import { Button } from "@/components/ui/Button";
 import EntryModal, { type EditableEntry } from "@/components/dashboard/EntryModal";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { collection, query, onSnapshot, orderBy, deleteDoc, doc } from "firebase/firestore";
+import { collection, query, onSnapshot, orderBy, deleteDoc, doc, increment, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import toast from "react-hot-toast";
+import { useAuth } from "@/context/AuthContext";
+import { logAction } from "@/lib/audit";
 
 interface Entry {
   id: string;
@@ -40,9 +42,13 @@ interface Entry {
   observation: string;
   engin: string;
   motif: string;
+  createdBy?: string;
+  createdByName?: string;
+  createdByEmail?: string;
 }
 
 export default function EntriesPage() {
+  const { profile } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editEntry, setEditEntry] = useState<EditableEntry | null>(null);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
@@ -50,6 +56,16 @@ export default function EntriesPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+  const [currency, setCurrency] = useState("FCFA");
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "settings", "enterprise"), (docSnap) => {
+      if (docSnap.exists()) {
+        setCurrency(docSnap.data().currency || "FCFA");
+      }
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const q = query(collection(db, "daily_entries"), orderBy("date", "desc"));
@@ -84,12 +100,19 @@ export default function EntriesPage() {
     }
   }, [activeDropdown]);
 
-  const filteredEntries = entries.filter(e => 
-    e.clientName?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    e.companyId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    e.status?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    e.canal?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredEntries = entries
+    .filter(e => {
+      if (profile?.role === "commerciale") {
+        return e.createdBy === profile?.uid;
+      }
+      return true;
+    })
+    .filter(e => 
+      e.clientName?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      e.companyId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      e.status?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      e.canal?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
   useGSAP(() => {
     if (!loading) {
@@ -108,8 +131,28 @@ export default function EntriesPage() {
 
   const handleDelete = async (entryId: string) => {
     if (!confirm("Êtes-vous sûr de vouloir supprimer cette saisie ?")) return;
+    const entry = entries.find(e => e.id === entryId);
+    const clientName = entry ? entry.clientName : "Inconnu";
+    const amount = entry ? entry.totalAmount : 0;
+    const company = entry ? entry.companyId : "global";
     try {
       await deleteDoc(doc(db, "daily_entries", entryId));
+      
+      // Decrement user's entriesCount
+      const creatorUid = entry?.createdBy;
+      if (creatorUid) {
+        await updateDoc(doc(db, "users", creatorUid), {
+          entriesCount: increment(-1)
+        }).catch(() => {});
+      }
+
+      await logAction(
+        profile?.uid,
+        profile?.email,
+        "sale_delete",
+        `Suppression de la saisie pour ${clientName} (${amount.toLocaleString()} ${currency}, filiale: ${company})`,
+        company
+      );
       toast.success("Saisie supprimée !");
     } catch (error) {
       console.error(error);
@@ -153,10 +196,10 @@ export default function EntriesPage() {
 
       <div className="stats-bar grid grid-cols-1 md:grid-cols-4 gap-6 relative z-10">
          {[
-            { label: "Saisies Totales", value: entries.length.toString(), icon: LayoutGrid, color: "text-[#5C3D2E]" },
-            { label: "Total Ventes", value: entries.reduce((acc, curr) => acc + Number(curr.totalAmount || 0), 0).toLocaleString() + " FCFA", icon: TrendingUp, color: "text-[#A66037]" },
-            { label: "Total Encaissé", value: entries.reduce((acc, curr) => acc + Number(curr.paidAmount || 0), 0).toLocaleString() + " FCFA", icon: Target, color: "text-[#D4AF37]" },
-            { label: "Total Reste", value: entries.reduce((acc, curr) => acc + Number(curr.resteAVerser || 0), 0).toLocaleString() + " FCFA", icon: AlertCircle, color: "text-red-500" },
+            { label: "Saisies Totales", value: filteredEntries.length.toString(), icon: LayoutGrid, color: "text-[#5C3D2E]" },
+            { label: "Total Ventes", value: filteredEntries.reduce((acc, curr) => acc + Number(curr.totalAmount || 0), 0).toLocaleString() + " " + currency, icon: TrendingUp, color: "text-[#A66037]" },
+            { label: "Total Encaissé", value: filteredEntries.reduce((acc, curr) => acc + Number(curr.paidAmount || 0), 0).toLocaleString() + " " + currency, icon: Target, color: "text-[#D4AF37]" },
+            { label: "Total Reste", value: filteredEntries.reduce((acc, curr) => acc + Number(curr.resteAVerser || 0), 0).toLocaleString() + " " + currency, icon: AlertCircle, color: "text-red-500" },
          ].map((stat, i) => (
             <div key={i} className="bg-white p-5 rounded-3xl shadow-premium border border-[#E8DCC4] flex items-center gap-4 hover:shadow-dogon hover:-translate-y-1 transition-all duration-300">
                <div className="w-12 h-12 bg-[#FAF3E0] rounded-2xl flex items-center justify-center text-[#5C3D2E] border border-[#E8DCC4]">
@@ -220,9 +263,9 @@ export default function EntriesPage() {
                        {entry.companyId}
                     </span>
                   </td>
-                  <td className="px-8 py-6 font-bold text-[#5C3D2E] text-sm whitespace-nowrap">{Number(entry.totalAmount).toLocaleString()} FCFA</td>
-                  <td className="px-8 py-6 text-emerald-600 font-bold text-sm whitespace-nowrap">{Number(entry.paidAmount).toLocaleString()} FCFA</td>
-                  <td className="px-8 py-6 text-red-500 font-bold text-sm whitespace-nowrap">{(entry.resteAVerser || 0).toLocaleString()} FCFA</td>
+                  <td className="px-8 py-6 font-bold text-[#5C3D2E] text-sm whitespace-nowrap">{Number(entry.totalAmount).toLocaleString()} {currency}</td>
+                  <td className="px-8 py-6 text-emerald-600 font-bold text-sm whitespace-nowrap">{Number(entry.paidAmount).toLocaleString()} {currency}</td>
+                  <td className="px-8 py-6 text-red-500 font-bold text-sm whitespace-nowrap">{(entry.resteAVerser || 0).toLocaleString()} {currency}</td>
                   <td className="px-8 py-6">
                      <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-lg text-[10px] font-bold uppercase tracking-tight">
                         {entry.modePaiement || "Espèces"}

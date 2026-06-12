@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import GSAPWrapper from "@/components/GSAPWrapper";
-import { Bell, Search, UserCircle, Menu, X } from "lucide-react";
+import { Bell, Search, UserCircle, Menu, X, Sun, Moon } from "lucide-react";
 
 import NommoAI from "@/components/dashboard/NommoAI";
 
@@ -18,6 +18,7 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
     if (!loading && (!user || !profile)) {
@@ -25,10 +26,28 @@ export default function DashboardLayout({
     }
   }, [user, profile, loading, router]);
 
+  // Load theme preference on mount
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("theme");
+    if (savedTheme === "dark") {
+      setIsDarkMode(true);
+    }
+  }, []);
+
   // Close mobile menu on route change
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [pathname]);
+
+  const toggleTheme = () => {
+    const nextMode = !isDarkMode;
+    setIsDarkMode(nextMode);
+    if (nextMode) {
+      localStorage.setItem("theme", "dark");
+    } else {
+      localStorage.setItem("theme", "light");
+    }
+  };
 
   if (loading || !user) {
     return (
@@ -39,7 +58,7 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-[#FAF3E0]">
+    <div className={`flex min-h-screen bg-[#FAF3E0] transition-colors duration-300 ${isDarkMode ? "dark bg-[#1A0F0A]" : ""}`}>
       {/* Large screen sidebar */}
       <div className="hidden lg:block">
         <Sidebar />
@@ -80,6 +99,17 @@ export default function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-4">
+            <button 
+              onClick={toggleTheme}
+              className="p-2.5 hover:bg-[#FAF3E0]/50 rounded-xl border border-[#E8DCC4] transition-all duration-300 group flex items-center justify-center cursor-pointer"
+              title={isDarkMode ? "Thème clair" : "Thème sombre"}
+            >
+              {isDarkMode ? (
+                <Sun className="w-5 h-5 text-[#D4AF37] animate-spin-slow" />
+              ) : (
+                <Moon className="w-5 h-5 text-[#5C3D2E] group-hover:rotate-12 transition-transform" />
+              )}
+            </button>
             <button className="relative p-2.5 hover:bg-[#FAF3E0] rounded-xl border border-[#E8DCC4] transition-colors group">
               <Bell className="w-5 h-5 text-[#B89E7E] group-hover:text-[#A66037]" />
               <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-[#A66037] rounded-full border-2 border-white" />

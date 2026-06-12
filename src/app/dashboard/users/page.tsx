@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
-import { Plus, ShieldCheck, MoreVertical, Search, Sparkles, Loader2, Edit3, Trash2 } from "lucide-react";
+import { Plus, ShieldCheck, MoreVertical, Search, Sparkles, Loader2, Edit3, Trash2, Activity } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { collection, onSnapshot, query, orderBy, deleteDoc, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import UserModal from "@/components/dashboard/UserModal";
+import UserActivityDrawer from "@/components/dashboard/UserActivityDrawer";
 import toast from "react-hot-toast";
 
 interface Collaborator {
@@ -27,6 +28,14 @@ export default function UsersPage() {
   const [editUser, setEditUser] = useState<Collaborator | null>(null);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [isActivityOpen, setIsActivityOpen] = useState(false);
+  const [selectedUserForActivity, setSelectedUserForActivity] = useState<Collaborator | null>(null);
+
+  const handleOpenActivity = (user: Collaborator) => {
+    setSelectedUserForActivity(user);
+    setIsActivityOpen(true);
+    setActiveDropdown(null);
+  };
 
   useEffect(() => {
     const q = query(collection(db, "users"), orderBy("displayName", "asc"));
@@ -215,6 +224,9 @@ export default function UsersPage() {
                     
                     {activeDropdown === user.id && (
                       <div className="dropdown-menu" onClick={(e) => e.stopPropagation()}>
+                        <button className="dropdown-item" onClick={() => handleOpenActivity(user)}>
+                          <Activity className="w-4 h-4" /> Activité commerciale
+                        </button>
                         <button className="dropdown-item" onClick={() => handleEdit(user)}>
                           <Edit3 className="w-4 h-4" /> Modifier
                         </button>
@@ -238,6 +250,11 @@ export default function UsersPage() {
         </div>
       </div>
       <UserModal isOpen={isModalOpen} onClose={handleCloseModal} editUser={editUser} />
+      <UserActivityDrawer 
+        isOpen={isActivityOpen} 
+        onClose={() => { setIsActivityOpen(false); setSelectedUserForActivity(null); }} 
+        user={selectedUserForActivity} 
+      />
     </div>
   );
 }

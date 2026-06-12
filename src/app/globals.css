@@ -215,6 +215,140 @@ body {
   color: #DC2626;
 }
 
+.dropdown-item.danger {
+  color: #DC2626;
+}
+
 .dropdown-item.danger:hover {
   background: #FEF2F2;
 }
+
+/* Manual Dark Mode Theme override */
+.dark {
+  --background: #1A0F0A;
+  --foreground: #F7EAE3;
+  --card: #2D1A12;
+  --border: #5C3D2E;
+}
+
+.dark body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+.dark .bg-white {
+  background-color: #2D1A12 !important;
+  color: #F7EAE3 !important;
+}
+
+.dark .text-primary {
+  color: #F7EAE3 !important;
+}
+
+.dark .text-\[\#2D1A12\] {
+  color: #F7EAE3 !important;
+}
+
+.dark .text-\[\#5C3D2E\] {
+  color: #FAF3E0 !important;
+}
+
+.dark .text-secondary {
+  color: #D4AF37 !important;
+}
+
+.dark .border-\[\#E8DCC4\] {
+  border-color: #5C3D2E !important;
+}
+
+.dark .border-\[\#E8DCC4\]\/50 {
+  border-color: rgba(92, 61, 46, 0.4) !important;
+}
+
+.dark .bg-\[\#FAF3E0\]\/30 {
+  background-color: rgba(92, 61, 46, 0.25) !important;
+}
+
+.dark .bg-\[\#FAF3E0\]\/50 {
+  background-color: rgba(92, 61, 46, 0.35) !important;
+}
+
+.dark .bg-\[\#FAF3E0\]\/40 {
+  background-color: rgba(92, 61, 46, 0.3) !important;
+}
+
+.dark .bg-\[\#FAF3E0\] {
+  background-color: #5C3D2E !important;
+}
+
+.dark select, .dark input {
+  color: #F7EAE3 !important;
+}
+
+.dark select option {
+  background-color: #2D1A12 !important;
+  color: #F7EAE3 !important;
+}
+
+.dark .dropdown-menu {
+  background-color: #2D1A12 !important;
+  border-color: #5C3D2E !important;
+}
+
+.dark .dropdown-item {
+  color: #F7EAE3 !important;
+}
+
+.dark .dropdown-item:hover {
+  background-color: #5C3D2E !important;
+  color: #D4AF37 !important;
+}
+
+/* Sound Wave Animation */
+.audio-wave-bar {
+  display: inline-block;
+  width: 3px;
+  height: 12px;
+  background-color: #D4AF37;
+  border-radius: 2px;
+  animation: bounce-audio 1s ease-in-out infinite alternate;
+}
+
+.audio-wave-bar:nth-child(2) {
+  animation-delay: 0.2s;
+  height: 16px;
+}
+
+.audio-wave-bar:nth-child(3) {
+  animation-delay: 0.4s;
+  height: 8px;
+}
+
+@keyframes bounce-audio {
+  0% { transform: scaleY(0.4); }
+  100% { transform: scaleY(1.5); }
+}
+
+/* Gold Particles Celebration Animation */
+.gold-particle {
+  position: absolute;
+  pointer-events: none;
+  background: radial-gradient(circle, #D4AF37 30%, #A66037 70%, transparent 100%);
+  border-radius: 50%;
+  animation: float-particle var(--duration, 2.5s) cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes float-particle {
+  0% {
+    transform: translate(0, 0) scale(0);
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(var(--x), var(--y)) scale(var(--scale, 1));
+    opacity: 0;
+  }
+}
+

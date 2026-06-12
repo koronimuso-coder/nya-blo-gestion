@@ -27,6 +27,7 @@ const MENU_ITEMS = [
   { icon: History, label: "Saisies de Vente", href: "/dashboard/entries" },
   { icon: Building2, label: "Entreprises", href: "/dashboard/companies" },
   { icon: Users, label: "Forces de Vente", href: "/dashboard/users" },
+  { icon: ShieldCheck, label: "Journal d'Audit", href: "/dashboard/audit" },
   { icon: FileText, label: "Archives & Exports", href: "/dashboard/exports" },
   { icon: Settings, label: "Paramètres", href: "/dashboard/settings" },
 ];
@@ -54,6 +55,13 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     if (onNavigate) onNavigate();
   };
 
+  const filteredMenuItems = MENU_ITEMS.filter(item => {
+    if (item.href === "/dashboard/audit") {
+      return profile && ["super_admin", "admin_entreprise", "superviseur"].includes(profile.role);
+    }
+    return true;
+  });
+
   return (
     <div ref={container} className="w-72 h-screen bg-[#2D1A12] text-[#F7EAE3] flex flex-col sticky top-0 border-r border-[#5C3D2E]/50">
       <div className="p-8 pb-12 flex items-center justify-between">
@@ -74,7 +82,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
       </div>
 
       <nav className="flex-1 px-4 space-y-2 overflow-y-auto custom-scrollbar">
-        {MENU_ITEMS.map((item) => {
+        {filteredMenuItems.map((item) => {
           const isActive = pathname === item.href;
           return (
             <Link

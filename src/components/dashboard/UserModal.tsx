@@ -7,6 +7,8 @@ import { useGSAP } from "@gsap/react";
 import { collection, addDoc, serverTimestamp, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import toast from "react-hot-toast";
+import { useAuth } from "@/context/AuthContext";
+import { logAction } from "@/lib/audit";
 
 interface Collaborator {
   id: string;
@@ -23,6 +25,7 @@ interface UserModalProps {
 }
 
 export const UserModal = ({ isOpen, onClose, editUser }: UserModalProps) => {
+  const { profile } = useAuth();
   const overlayRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLFormElement>(null);
   const [loading, setLoading] = useState(false);
@@ -75,6 +78,12 @@ export const UserModal = ({ isOpen, onClose, editUser }: UserModalProps) => {
           active: formData.active,
           updatedAt: new Date().toISOString()
         });
+        await logAction(
+          profile?.uid,
+          profile?.email,
+          "user_update",
+          `Mise à jour du collaborateur ${formData.displayName} (Rôle: ${formData.role}, Actif: ${formData.active})`
+        );
         toast.success("Collaborateur mis à jour !");
       } else {
         // Create profile in Firestore
@@ -84,6 +93,12 @@ export const UserModal = ({ isOpen, onClose, editUser }: UserModalProps) => {
           createdAt: new Date().toISOString(),
           serverTimestamp: serverTimestamp()
         });
+        await logAction(
+          profile?.uid,
+          profile?.email,
+          "user_create",
+          `Création du collaborateur ${formData.displayName} (${formData.email}, Rôle: ${formData.role})`
+        );
         toast.success("Collaboratrice ajoutée !");
       }
       

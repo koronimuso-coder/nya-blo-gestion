@@ -7,6 +7,8 @@ import { useGSAP } from "@gsap/react";
 import { collection, addDoc, serverTimestamp, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import toast from "react-hot-toast";
+import { useAuth } from "@/context/AuthContext";
+import { logAction } from "@/lib/audit";
 
 interface Company {
   id: string;
@@ -24,6 +26,7 @@ interface CompanyModalProps {
 }
 
 export const CompanyModal = ({ isOpen, onClose, editCompany }: CompanyModalProps) => {
+  const { profile } = useAuth();
   const overlayRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLFormElement>(null);
   const [loading, setLoading] = useState(false);
@@ -76,6 +79,13 @@ export const CompanyModal = ({ isOpen, onClose, editCompany }: CompanyModalProps
           ...formData,
           updatedAt: new Date().toISOString()
         });
+        await logAction(
+          profile?.uid,
+          profile?.email,
+          "company_update",
+          `Mise à jour de l'entreprise ${formData.name} (Secteur: ${formData.domain}, Siège: ${formData.location})`,
+          formData.name
+        );
         toast.success("Entreprise mise à jour !");
       } else {
         // Create new
@@ -84,6 +94,13 @@ export const CompanyModal = ({ isOpen, onClose, editCompany }: CompanyModalProps
           createdAt: new Date().toISOString(),
           serverTimestamp: serverTimestamp()
         });
+        await logAction(
+          profile?.uid,
+          profile?.email,
+          "company_create",
+          `Création de l'entreprise ${formData.name} (Secteur: ${formData.domain}, Siège: ${formData.location})`,
+          formData.name
+        );
         toast.success("Entreprise ajoutée avec succès !");
       }
       

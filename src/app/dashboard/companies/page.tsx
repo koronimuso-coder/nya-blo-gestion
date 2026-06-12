@@ -6,9 +6,23 @@ import { Button } from "@/components/ui/Button";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { collection, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  Cell 
+} from "recharts";
+
+const PIE_COLORS = ["#5C3D2E", "#A66037", "#D4AF37", "#8B5E3C", "#B89E7E", "#2D1A12"];
 import { db } from "@/lib/firebase/config";
 import CompanyModal from "@/components/dashboard/CompanyModal";
 import toast from "react-hot-toast";
+import { useAuth } from "@/context/AuthContext";
+import { logAction } from "@/lib/audit";
 
 interface Company {
   id: string;
@@ -20,6 +34,7 @@ interface Company {
 }
 
 export default function CompaniesPage() {
+  const { profile } = useAuth();
   const container = useRef<HTMLDivElement>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,6 +42,16 @@ export default function CompaniesPage() {
   const [editCompany, setEditCompany] = useState<Company | null>(null);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [currency, setCurrency] = useState("FCFA");
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "settings", "enterprise"), (docSnap) => {
+      if (docSnap.exists()) {
+        setCurrency(docSnap.data().currency || "FCFA");
+      }
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const q = query(collection(db, "companies"), orderBy("name", "asc"));
@@ -54,13 +79,28 @@ export default function CompaniesPage() {
   );
 
   const [stats, setStats] = useState({ totalSales: 0, count: 0 });
+  const [chartData, setChartData] = useState<{ name: string; sales: number }[]>([]);
 
   useEffect(() => {
     const qEntries = query(collection(db, "daily_entries"));
     const unsubscribe = onSnapshot(qEntries, (snapshot) => {
       let total = 0;
-      snapshot.docs.forEach(d => total += Number(d.data().totalAmount || 0));
+      const companySales: Record<string, number> = {};
+      snapshot.docs.forEach(d => {
+        const data = d.data();
+        const sales = Number(data.totalAmount || 0);
+        total += sales;
+        const company = data.companyId || "Inconnue";
+        companySales[company] = (companySales[company] || 0) + sales;
+      });
+      
+      const formattedChart = Object.entries(companySales).map(([name, sales]) => ({
+        name,
+        sales
+      })).sort((a, b) => b.sales - a.sales);
+
       setStats({ totalSales: total, count: snapshot.size });
+      setChartData(formattedChart);
     });
     return () => unsubscribe();
   }, []);
@@ -82,8 +122,11 @@ export default function CompaniesPage() {
 
   const handleDelete = async (companyId: string) => {
     if (!confirm("Êtes-vous sûr de vouloir supprimer cette entreprise ?")) return;
+    const company = companies.find(c => c.id === companyId);
+    const companyName = company ? company.name : companyId;
     try {
       await deleteDoc(doc(db, "companies", companyId));
+      await logAction(profile?.uid, profile?.email, "company_delete", `Suppression de l'entreprise ${companyName}`, companyName);
       toast.success("Entreprise supprimée !");
     } catch (error) {
       console.error(error);
@@ -126,7 +169,7 @@ export default function CompaniesPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
         {[
           { label: "Total Filiales", value: companies.length.toString(), icon: Building2, color: "bg-[#5C3D2E]" },
-          { label: "Ventes Totales", value: stats.totalSales.toLocaleString() + " FCFA", icon: TrendingUp, color: "bg-[#A66037]" },
+          { label: "Ventes Totales", value: stats.totalSales.toLocaleString() + " " + currency, icon: TrendingUp, color: "bg-[#A66037]" },
           { label: "Opérations", value: stats.count.toString(), icon: Users, color: "bg-[#D4AF37]" },
         ].map((stat, i) => (
           <div key={i} className="stat-card bg-white p-6 rounded-3xl shadow-premium border border-[#E8DCC4] flex items-center gap-6 hover:shadow-dogon hover:-translate-y-1 transition-all duration-300">
@@ -140,6 +183,39 @@ export default function CompaniesPage() {
           </div>
         ))}
       </div>
+
+      {/* Comparative Performance Chart */}
+      {chartData.length > 0 && (
+        <div className="stat-card bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] relative overflow-hidden z-10">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 bg-[#A66037] rounded-xl flex items-center justify-center text-white">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-[#5C3D2E] font-dogon">Performance des Filiales</h3>
+              <p className="text-xs text-[#B89E7E]">Comparatif du chiffre d&apos;affaires consolidé par entreprise.</p>
+            </div>
+          </div>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#FAF3E0" vertical={false} />
+                <XAxis dataKey="name" stroke="#B89E7E" fontSize={10} tickLine={false} />
+                <YAxis stroke="#B89E7E" fontSize={10} tickLine={false} tickFormatter={(v) => `${(v / 1000).toLocaleString()}k`} />
+                <Tooltip 
+                  formatter={(value: any) => [`${Number(value).toLocaleString()} ${currency}`, "Ventes"]}
+                  contentStyle={{ backgroundColor: "#FAF3E0", borderRadius: "16px", border: "1px solid #E8DCC4", fontSize: "12px", fontFamily: "Outfit" }}
+                />
+                <Bar dataKey="sales" fill="#A66037" radius={[8, 8, 0, 0]} maxBarSize={50}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-[40px] shadow-premium border border-[#E8DCC4] overflow-hidden relative z-10">
         <div className="p-8 border-b border-[#E8DCC4] flex flex-col md:flex-row md:items-center justify-between gap-4">

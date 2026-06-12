@@ -15,6 +15,7 @@ export interface UserProfile {
   companies: string[];
   active: boolean;
   photoURL?: string;
+  notifications?: Record<string, boolean>;
 }
 
 interface AuthContextType {

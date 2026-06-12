@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Bot, Send, X, Minimize2, Sparkles, User, Loader2 } from "lucide-react";
+import { Bot, Send, X, Minimize2, Sparkles, User, Loader2, Volume2, VolumeX } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { useAuth } from "@/context/AuthContext";
@@ -18,6 +18,7 @@ export default function NommoAI() {
     { role: "assistant", content: "Salutations. Je suis Nommo, l'esprit gardien de vos données. Comment puis-je vous éclairer aujourd'hui ?" }
   ]);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeSpeechIdx, setActiveSpeechIdx] = useState<number | null>(null);
   
   const chatRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -31,6 +32,14 @@ export default function NommoAI() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Clean up speech synthesis when chat window is closed or toggled
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setActiveSpeechIdx(null);
+  }, [isOpen]);
 
   useGSAP(() => {
     if (isOpen) {
@@ -62,11 +71,18 @@ export default function NommoAI() {
     }
   }, { scope: chatRef, dependencies: [isOpen] });
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+  const handleSend = async (customMessage?: string) => {
+    const textToSend = customMessage || input;
+    if (!textToSend.trim() || isLoading) return;
 
-    const userMessage = input.trim();
-    setInput("");
+    // Interrupt any active speech reading
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      setActiveSpeechIdx(null);
+    }
+
+    const userMessage = textToSend.trim();
+    if (!customMessage) setInput("");
     setMessages(prev => [...prev, { role: "user", content: userMessage }]);
     setIsLoading(true);
 
@@ -92,6 +108,32 @@ export default function NommoAI() {
       setMessages(prev => [...prev, { role: "assistant", content: "Le flux des données est perturbé. Veuillez réessayer plus tard." }]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const toggleSpeech = (index: number, text: string) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+
+    if (activeSpeechIdx === index) {
+      window.speechSynthesis.cancel();
+      setActiveSpeechIdx(null);
+    } else {
+      window.speechSynthesis.cancel();
+      
+      // Strip markdown before reading aloud
+      const cleanText = text.replace(/[*#`_\-]/g, "").trim();
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.lang = "fr-FR";
+      
+      utterance.onend = () => {
+        setActiveSpeechIdx(null);
+      };
+      utterance.onerror = () => {
+        setActiveSpeechIdx(null);
+      };
+
+      window.speechSynthesis.speak(utterance);
+      setActiveSpeechIdx(index);
     }
   };
 
@@ -138,12 +180,38 @@ export default function NommoAI() {
                 }`}>
                   {m.role === "user" ? <User className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
                 </div>
-                <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${
+                <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm flex flex-col ${
                   m.role === "user" 
                   ? "bg-[#5C3D2E] text-white rounded-tr-none" 
                   : "bg-white text-[#2D1A12] border border-[#E8DCC4] rounded-tl-none"
                 }`}>
-                  {m.content}
+                  <div>{m.content}</div>
+                  
+                  {m.role === "assistant" && (
+                    <div className="mt-2.5 pt-2 border-t border-[#E8DCC4]/30 flex items-center justify-between text-[10px] text-[#A66037]">
+                      <span className="font-semibold uppercase tracking-wider text-[8px] opacity-75">Nommo Vocale</span>
+                      <button 
+                        onClick={() => toggleSpeech(i, m.content)}
+                        className="p-1 hover:bg-[#FAF3E0]/50 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer text-[#A66037] hover:text-[#5C3D2E] outline-none"
+                      >
+                        {activeSpeechIdx === i ? (
+                          <>
+                            <div className="flex gap-0.5 items-center px-1 shrink-0 h-3">
+                              <span className="audio-wave-bar" />
+                              <span className="audio-wave-bar" />
+                              <span className="audio-wave-bar" />
+                            </div>
+                            <VolumeX className="w-3.5 h-3.5" />
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-bold text-[8px] uppercase tracking-wider">Écouter</span>
+                            <Volume2 className="w-3.5 h-3.5" />
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -160,7 +228,25 @@ export default function NommoAI() {
         </div>
 
         {/* Input */}
-        <div className="p-4 bg-white border-t border-[#E8DCC4]">
+        <div className="p-4 bg-white border-t border-[#E8DCC4] space-y-3">
+          {/* Quick Suggestions Chips */}
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none" style={{ scrollbarWidth: "none" }}>
+            {[
+              { label: "📊 Chiffre d'affaires", query: "Quel est le chiffre d'affaires total ?" },
+              { label: "🕒 Dernières ventes", query: "Quelles sont les dernières opérations ?" },
+              { label: "🏢 Filiales", query: "Fais un point sur les ventes par filiale." },
+              { label: "💰 Recouvrements", query: "Combien reste-t-il à recouvrer ?" }
+            ].map((chip, idx) => (
+              <button
+                key={idx}
+                onClick={() => handleSend(chip.query)}
+                disabled={isLoading}
+                className="whitespace-nowrap px-3 py-1.5 rounded-full bg-[#FAF3E0] hover:bg-[#5C3D2E] hover:text-white border border-[#E8DCC4] text-[10px] font-bold text-[#5C3D2E] transition-all duration-200 shrink-0 disabled:opacity-50 cursor-pointer"
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
           <div className="relative flex items-center gap-2">
             <input 
               type="text" 
@@ -171,9 +257,9 @@ export default function NommoAI() {
               className="w-full pl-4 pr-12 py-4 rounded-2xl bg-[#FAF3E0]/50 border-none focus:ring-2 focus:ring-[#D4AF37]/30 text-sm font-medium placeholder-[#B89E7E]"
             />
             <button 
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={isLoading || !input.trim()}
-              className="absolute right-2 p-2.5 bg-[#5C3D2E] text-white rounded-xl hover:bg-[#A66037] transition-all disabled:opacity-50 disabled:grayscale"
+              className="absolute right-2 p-2.5 bg-[#5C3D2E] text-white rounded-xl hover:bg-[#A66037] transition-all disabled:opacity-50 disabled:grayscale cursor-pointer"
             >
               <Send className="w-4 h-4" />
             </button>
@@ -185,7 +271,7 @@ export default function NommoAI() {
       <button 
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
-        className="w-16 h-16 rounded-[24px] bg-[#A66037] text-white flex items-center justify-center shadow-dogon hover:scale-110 active:scale-95 transition-all relative group overflow-hidden"
+        className="w-16 h-16 rounded-[24px] bg-[#A66037] text-white flex items-center justify-center shadow-dogon hover:scale-110 active:scale-95 transition-all relative group overflow-hidden cursor-pointer"
       >
         <div className="absolute inset-0 dogon-pattern opacity-10" />
         <Bot className="w-8 h-8 relative z-10" />
@@ -199,3 +285,4 @@ export default function NommoAI() {
     </div>
   );
 }
+

@@ -30,6 +30,9 @@ async function seedData() {
   
   try {
     const { adminDb } = await import("../lib/firebase/admin");
+    if (!adminDb) {
+      throw new Error("Firebase Admin n'a pas pu être initialisé.");
+    }
 
     for (const company of DUMMY_COMPANIES) {
         const docRef = await adminDb.collection("companies").add({

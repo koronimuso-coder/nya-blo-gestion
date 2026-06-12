@@ -6,6 +6,9 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
 async function verifyAdmin() {
   try {
     const { adminAuth, adminDb } = await import("../lib/firebase/admin");
+    if (!adminAuth || !adminDb) {
+      throw new Error("Firebase Admin n'a pas pu être initialisé.");
+    }
     
     console.log("🔍 Vérification de l'admin admin@nyablo.com...");
     

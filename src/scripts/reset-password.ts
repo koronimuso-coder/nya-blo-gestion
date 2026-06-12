@@ -6,6 +6,9 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
 async function resetPassword() {
   try {
     const { adminAuth } = await import("../lib/firebase/admin");
+    if (!adminAuth) {
+      throw new Error("Firebase Admin n'a pas pu être initialisé.");
+    }
     const user = await adminAuth.getUserByEmail("admin@nyablo.com");
     await adminAuth.updateUser(user.uid, {
       password: "password123",
