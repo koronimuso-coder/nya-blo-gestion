@@ -29,14 +29,6 @@
   --border: #E8DCC4;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #1A0F0A;
-    --foreground: #F7EAE3;
-    --card: #2D1A12;
-    --border: #5C3D2E;
-  }
-}
 
 * {
   box-sizing: border-box;
@@ -229,6 +221,7 @@ body {
   --foreground: #F7EAE3;
   --card: #2D1A12;
   --border: #5C3D2E;
+  color: var(--foreground) !important;
 }
 
 .dark body {

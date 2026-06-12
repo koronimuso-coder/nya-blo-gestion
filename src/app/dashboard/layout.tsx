@@ -29,8 +29,11 @@ export default function DashboardLayout({
   // Load theme preference on mount
   useEffect(() => {
     const savedTheme = localStorage.getItem("theme");
-    if (savedTheme === "dark") {
-      setIsDarkMode(true);
+    if (savedTheme) {
+      setIsDarkMode(savedTheme === "dark");
+    } else {
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      setIsDarkMode(prefersDark);
     }
   }, []);
 
@@ -58,7 +61,7 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className={`flex min-h-screen bg-[#FAF3E0] transition-colors duration-300 ${isDarkMode ? "dark bg-[#1A0F0A]" : ""}`}>
+    <div className={`flex min-h-screen bg-[#FAF3E0] text-[#2D1A12] transition-colors duration-300 ${isDarkMode ? "dark bg-[#1A0F0A] text-[#F7EAE3]" : ""}`}>
       {/* Large screen sidebar */}
       <div className="hidden lg:block">
         <Sidebar />
