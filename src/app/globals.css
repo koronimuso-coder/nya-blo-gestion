@@ -352,3 +352,9 @@ body {
   }
 }
 
+/* Ensure active nav items in the sidebar maintain dark text for contrast on gold */
+.dark .nav-item.bg-\[\#D4AF37\],
+.dark .nav-item.bg-\[\#D4AF37\] * {
+  color: #2D1A12 !important;
+}
+
