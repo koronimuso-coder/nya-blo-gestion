@@ -14,12 +14,15 @@ import {
   Loader2,
   Calendar,
   Activity,
-  FileText
+  FileText,
+  FileSpreadsheet
 } from "lucide-react";
 import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
+import { logAction } from "@/lib/audit";
+import toast from "react-hot-toast";
 
 interface AuditLog {
   id: string;
@@ -51,6 +54,7 @@ export default function AuditPage() {
   const [dataLoading, setDataLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
+  const [exporting, setExporting] = useState<string | null>(null);
 
   useEffect(() => {
     // Only subscribe to database if user is authorized
@@ -125,6 +129,103 @@ export default function AuditPage() {
     return matchesSearch && matchesAction;
   });
 
+  const exportPDF = async () => {
+    setExporting("PDF");
+    try {
+      const jsPDFModule = await import("jspdf");
+      const jsPDF = jsPDFModule.default;
+      await import("jspdf-autotable");
+      
+      const doc = new jsPDF();
+      
+      // Header Banner
+      doc.setFillColor(45, 26, 18); // Dark Dogon primary
+      doc.rect(0, 0, 210, 40, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(16);
+      doc.text("NYA BLO — JOURNAL D'AUDIT DE SECURITE", 14, 18);
+      doc.setFontSize(9);
+      doc.text(`Nombre d'enregistrements : ${filteredLogs.length}`, 14, 26);
+      doc.text(`Généré par : ${profile?.email} le ${new Date().toLocaleString('fr-FR')}`, 14, 32);
+      
+      const headers = ["Date", "Utilisateur", "Action", "Détails", "Cible"];
+      const tableData = filteredLogs.map(log => {
+        const actionMeta = ACTION_LABELS[log.action] || { label: log.action };
+        const dateObj = new Date(log.timestamp);
+        const dateStr = dateObj.toLocaleDateString("fr-FR") + " " + dateObj.toLocaleTimeString("fr-FR");
+        return [
+          dateStr,
+          log.userEmail || "Anonyme",
+          actionMeta.label || log.action,
+          log.details || "",
+          log.companyId || "global"
+        ];
+      });
+
+      (doc as any).autoTable({
+        startY: 48,
+        head: [headers],
+        body: tableData,
+        theme: 'striped',
+        headStyles: { fillColor: [45, 26, 18], fontSize: 8, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [250, 243, 224] },
+        styles: { fontSize: 7, cellPadding: 3 },
+        margin: { left: 14, right: 14 }
+      });
+
+      doc.save(`NYA_BLO_AuditLog_${new Date().toISOString().split('T')[0]}.pdf`);
+      toast.success("Journal d'audit PDF exporté !");
+      
+      await logAction(
+        profile?.uid,
+        profile?.email,
+        "export_pdf",
+        `Génération du rapport PDF du Journal d'Audit (${filteredLogs.length} lignes)`
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de l'export PDF");
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const exportExcel = async () => {
+    setExporting("XLSX");
+    try {
+      const XLSX = await import("xlsx");
+      const worksheetData = filteredLogs.map(log => {
+        const actionMeta = ACTION_LABELS[log.action] || { label: log.action };
+        return {
+          "Date & Heure": new Date(log.timestamp).toLocaleString("fr-FR"),
+          "Utilisateur": log.userEmail,
+          "Action": actionMeta.label || log.action,
+          "Détails": log.details,
+          "Filiale Cible": log.companyId
+        };
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Journal d'Audit");
+      XLSX.writeFile(workbook, `NYA_BLO_AuditLog_${new Date().toISOString().split('T')[0]}.xlsx`);
+      
+      toast.success("Journal d'audit Excel exporté !");
+      
+      await logAction(
+        profile?.uid,
+        profile?.email,
+        "export_xlsx",
+        `Génération de l'archive Excel du Journal d'Audit (${filteredLogs.length} lignes)`
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de l'export Excel");
+    } finally {
+      setExporting(null);
+    }
+  };
+
   // Basic aggregation metrics for header
   const today = new Date().toISOString().split("T")[0];
   const logsToday = logs.filter(l => l.timestamp?.startsWith(today)).length;
@@ -140,6 +241,24 @@ export default function AuditPage() {
         <div>
           <h1 className="text-3xl font-bold text-[#5C3D2E] font-dogon uppercase tracking-tight">Journal d&apos;Audit & Sécurité</h1>
           <p className="text-[#B89E7E] mt-1">Traçabilité complète des actions administratives et commerciales.</p>
+        </div>
+        <div className="flex items-center gap-3 relative z-20">
+          <button
+            onClick={exportPDF}
+            disabled={exporting !== null}
+            className="px-5 py-3.5 bg-[#5C3D2E] text-white rounded-2xl hover:bg-[#A66037] font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
+          >
+            {exporting === "PDF" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+            Exporter PDF
+          </button>
+          <button
+            onClick={exportExcel}
+            disabled={exporting !== null}
+            className="px-5 py-3.5 bg-[#FAF3E0] hover:bg-[#5C3D2E] hover:text-white text-[#5C3D2E] border border-[#E8DCC4] rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
+          >
+            {exporting === "XLSX" ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+            Exporter Excel
+          </button>
         </div>
       </div>
 

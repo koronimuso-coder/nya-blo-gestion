@@ -71,7 +71,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           </div>
           <div className="font-dogon">
             <h1 className="text-xl font-bold tracking-tighter leading-none">NYA BLO</h1>
-            <p className="text-[10px] text-[#A66037] font-bold tracking-[0.3em] uppercase mt-1">Symmetry & Earth</p>
+            <p className="text-[10px] text-[#D4AF37] font-bold tracking-[0.3em] uppercase mt-1">Symmetry & Earth</p>
           </div>
         </Link>
         {onNavigate && (
@@ -92,11 +92,11 @@ export function Sidebar({ onNavigate }: SidebarProps) {
               className={`nav-item flex items-center justify-between px-5 py-4 rounded-2xl transition-all group ${
                 isActive 
                 ? "bg-[#D4AF37] text-[#2D1A12] shadow-dogon font-bold" 
-                : "text-[#B89E7E] hover:bg-white/5 hover:text-[#F7EAE3]"
+                : "text-[#FAF3E0]/70 hover:bg-white/5 hover:text-white"
               }`}
             >
               <div className="flex items-center gap-4">
-                <item.icon className={`w-5 h-5 ${isActive ? "text-[#2D1A12]" : "text-[#A66037] group-hover:text-[#D4AF37] transition-colors"}`} />
+                <item.icon className={`w-5 h-5 ${isActive ? "text-[#2D1A12]" : "text-[#B89E7E] group-hover:text-[#D4AF37] transition-colors"}`} />
                 <span className="text-sm tracking-tight">{item.label}</span>
               </div>
               {isActive && <ChevronRight className="w-4 h-4" />}
@@ -113,7 +113,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
               </div>
               <div className="min-w-0">
                  <p className="text-xs font-bold truncate">{profile?.displayName}</p>
-                 <p className="text-[10px] text-[#B89E7E] uppercase tracking-widest">{profile?.role?.replace('_', ' ')}</p>
+                 <p className="text-[10px] text-[#E8DCC4] uppercase tracking-widest">{profile?.role?.replace('_', ' ')}</p>
               </div>
            </div>
         </div>

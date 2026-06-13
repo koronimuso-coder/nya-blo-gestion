@@ -1,10 +1,10 @@
 "use client";
-
 import React, { useState, useRef, useEffect } from "react";
-import { Bot, Send, X, Minimize2, Sparkles, User, Loader2, Volume2, VolumeX } from "lucide-react";
+import { Bot, Send, X, Minimize2, Sparkles, User, Loader2, Volume2, VolumeX, Mic, MicOff } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { useAuth } from "@/context/AuthContext";
+import toast from "react-hot-toast";
 
 interface Message {
   role: "user" | "assistant";
@@ -20,9 +20,14 @@ export default function NommoAI() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeSpeechIdx, setActiveSpeechIdx] = useState<number | null>(null);
   
+  // Voice states
+  const [isListening, setIsListening] = useState(false);
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  
   const chatRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
   const { profile } = useAuth();
 
   const scrollToBottom = () => {
@@ -71,6 +76,43 @@ export default function NommoAI() {
     }
   }, { scope: chatRef, dependencies: [isOpen] });
 
+  // Helper function to speak text out loud
+  const speakText = (text: string, index: number) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    
+    try {
+      window.speechSynthesis.cancel();
+      // Strip markdown symbols before reading aloud
+      const cleanText = text.replace(/[*#`_\-]/g, "").trim();
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.lang = "fr-FR";
+      
+      utterance.onend = () => {
+        setActiveSpeechIdx(null);
+      };
+      utterance.onerror = () => {
+        setActiveSpeechIdx(null);
+      };
+
+      window.speechSynthesis.speak(utterance);
+      setActiveSpeechIdx(index);
+    } catch (e) {
+      console.error("Speech Synthesis Error:", e);
+      setActiveSpeechIdx(null);
+    }
+  };
+
+  const toggleSpeech = (index: number, text: string) => {
+    if (activeSpeechIdx === index) {
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      setActiveSpeechIdx(null);
+    } else {
+      speakText(text, index);
+    }
+  };
+
   const handleSend = async (customMessage?: string) => {
     const textToSend = customMessage || input;
     if (!textToSend.trim() || isLoading) return;
@@ -83,7 +125,9 @@ export default function NommoAI() {
 
     const userMessage = textToSend.trim();
     if (!customMessage) setInput("");
-    setMessages(prev => [...prev, { role: "user", content: userMessage }]);
+    
+    const newMessages = [...messages, { role: "user" as const, content: userMessage }];
+    setMessages(newMessages);
     setIsLoading(true);
 
     try {
@@ -102,7 +146,16 @@ export default function NommoAI() {
       const data = await response.json();
       if (data.error) throw new Error(data.error);
 
-      setMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
+      const reply = data.reply;
+      setMessages(prev => [...prev, { role: "assistant", content: reply }]);
+      
+      // Auto-vocalise the response if toggle is enabled
+      if (autoSpeak) {
+        // Wait slightly for DOM render, then speak
+        setTimeout(() => {
+          speakText(reply, newMessages.length);
+        }, 300);
+      }
     } catch (error) {
       console.error("AI Error:", error);
       setMessages(prev => [...prev, { role: "assistant", content: "Le flux des données est perturbé. Veuillez réessayer plus tard." }]);
@@ -111,29 +164,65 @@ export default function NommoAI() {
     }
   };
 
-  const toggleSpeech = (index: number, text: string) => {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
+  // Safe reference to handleSend for SpeechRecognition callbacks to avoid stale closures
+  const handleSendRef = useRef(handleSend);
+  useEffect(() => {
+    handleSendRef.current = handleSend;
+  });
 
-    if (activeSpeechIdx === index) {
-      window.speechSynthesis.cancel();
-      setActiveSpeechIdx(null);
+  // Speech Recognition initialization
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const rec = new SpeechRecognition();
+        rec.continuous = false;
+        rec.interimResults = false;
+        rec.lang = "fr-FR";
+
+        rec.onstart = () => {
+          setIsListening(true);
+        };
+
+        rec.onresult = (event: any) => {
+          const transcript = event.results[0][0].transcript;
+          if (transcript.trim()) {
+            handleSendRef.current(transcript);
+          }
+        };
+
+        rec.onerror = (event: any) => {
+          console.error("Speech recognition error:", event.error);
+          setIsListening(false);
+          if (event.error === "not-allowed") {
+            toast.error("Accès micro refusé. Veuillez autoriser le micro.");
+          }
+        };
+
+        rec.onend = () => {
+          setIsListening(false);
+        };
+
+        recognitionRef.current = rec;
+      }
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      toast.error("La reconnaissance vocale n'est pas supportée par ce navigateur.");
+      return;
+    }
+    
+    if (isListening) {
+      recognitionRef.current.stop();
     } else {
-      window.speechSynthesis.cancel();
-      
-      // Strip markdown before reading aloud
-      const cleanText = text.replace(/[*#`_\-]/g, "").trim();
-      const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.lang = "fr-FR";
-      
-      utterance.onend = () => {
-        setActiveSpeechIdx(null);
-      };
-      utterance.onerror = () => {
-        setActiveSpeechIdx(null);
-      };
-
-      window.speechSynthesis.speak(utterance);
-      setActiveSpeechIdx(index);
+      // Cancel active speech before recording
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      setActiveSpeechIdx(null);
+      recognitionRef.current.start();
     }
   };
 
@@ -158,19 +247,55 @@ export default function NommoAI() {
                 <p className="text-[10px] text-[#D4AF37] font-bold uppercase tracking-widest">Esprit Gardien</p>
              </div>
           </div>
-          <div className="flex items-center gap-2">
-             <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+          <div className="flex items-center gap-1">
+             {/* Auto-vocalise toggle */}
+             <button 
+               onClick={() => setAutoSpeak(!autoSpeak)} 
+               className={`p-2 rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer outline-none border ${
+                 autoSpeak 
+                   ? "bg-[#D4AF37] text-[#2D1A12] border-[#D4AF37] font-bold" 
+                   : "hover:bg-white/10 text-[#FAF3E0]/60 border-transparent"
+               }`}
+               title={autoSpeak ? "Désactiver la lecture auto" : "Activer la lecture auto"}
+             >
+                {autoSpeak ? <Volume2 className="w-4 h-4 animate-bounce" /> : <VolumeX className="w-4 h-4" />}
+                <span className="text-[9px] uppercase tracking-wider hidden sm:inline">{autoSpeak ? "Voix ON" : "Voix OFF"}</span>
+             </button>
+             <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-white/10 rounded-lg transition-colors cursor-pointer">
                 <Minimize2 className="w-4 h-4" />
              </button>
-             <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-red-500/20 rounded-lg transition-colors group">
+             <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-red-500/20 rounded-lg transition-colors group cursor-pointer">
                 <X className="w-4 h-4 group-hover:text-red-400" />
              </button>
           </div>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[#FAF3E0]/30">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[#FAF3E0]/30 relative">
           <div className="absolute inset-0 dogon-pattern opacity-5 pointer-events-none" />
+          
+          {/* Voice Listening Overlay */}
+          {isListening && (
+            <div className="absolute inset-0 bg-[#FAF3E0]/95 backdrop-blur-sm z-20 flex flex-col items-center justify-center space-y-6">
+              <div className="w-20 h-20 bg-[#D4AF37]/20 rounded-full flex items-center justify-center animate-pulse">
+                <Mic className="w-10 h-10 text-[#5C3D2E] listening-pulse" />
+              </div>
+              <div className="flex gap-1.5 items-center justify-center h-10">
+                <span className="speech-bar" />
+                <span className="speech-bar" />
+                <span className="speech-bar" />
+                <span className="speech-bar" />
+                <span className="speech-bar" />
+              </div>
+              <p className="text-sm font-bold text-[#5C3D2E] uppercase tracking-widest animate-pulse">Nommo vous écoute...</p>
+              <button 
+                onClick={toggleListening}
+                className="px-6 py-2.5 bg-[#5C3D2E] hover:bg-[#A66037] text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-md cursor-pointer"
+              >
+                Annuler
+              </button>
+            </div>
+          )}
           
           {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} relative z-10`}>
@@ -178,14 +303,14 @@ export default function NommoAI() {
                 <div className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center ${
                   m.role === "user" ? "bg-[#5C3D2E] text-white" : "bg-[#D4AF37] text-[#2D1A12]"
                 }`}>
-                  {m.role === "user" ? <User className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+                  {m.role === "user" ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                 </div>
                 <div className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm flex flex-col ${
                   m.role === "user" 
                   ? "bg-[#5C3D2E] text-white rounded-tr-none" 
                   : "bg-white text-[#2D1A12] border border-[#E8DCC4] rounded-tl-none"
                 }`}>
-                  <div>{m.content}</div>
+                  <div className="whitespace-pre-line">{m.content}</div>
                   
                   {m.role === "assistant" && (
                     <div className="mt-2.5 pt-2 border-t border-[#E8DCC4]/30 flex items-center justify-between text-[10px] text-[#A66037]">
@@ -228,7 +353,7 @@ export default function NommoAI() {
         </div>
 
         {/* Input */}
-        <div className="p-4 bg-white border-t border-[#E8DCC4] space-y-3">
+        <div className="p-4 bg-white border-t border-[#E8DCC4] space-y-3 relative z-10">
           {/* Quick Suggestions Chips */}
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none" style={{ scrollbarWidth: "none" }}>
             {[
@@ -254,15 +379,29 @@ export default function NommoAI() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
               placeholder="Interroger l'esprit des données..."
-              className="w-full pl-4 pr-12 py-4 rounded-2xl bg-[#FAF3E0]/50 border-none focus:ring-2 focus:ring-[#D4AF37]/30 text-sm font-medium placeholder-[#B89E7E]"
+              className="w-full pl-4 pr-24 py-4 rounded-2xl bg-[#FAF3E0]/50 border-none focus:ring-2 focus:ring-[#D4AF37]/30 text-sm font-medium placeholder-[#B89E7E]"
             />
-            <button 
-              onClick={() => handleSend()}
-              disabled={isLoading || !input.trim()}
-              className="absolute right-2 p-2.5 bg-[#5C3D2E] text-white rounded-xl hover:bg-[#A66037] transition-all disabled:opacity-50 disabled:grayscale cursor-pointer"
-            >
-              <Send className="w-4 h-4" />
-            </button>
+            <div className="absolute right-2 flex items-center gap-1.5">
+               <button
+                 onClick={toggleListening}
+                 type="button"
+                 className={`p-2.5 rounded-xl transition-all cursor-pointer ${
+                   isListening 
+                     ? "bg-[#D4AF37] text-[#2D1A12] listening-pulse font-bold" 
+                     : "bg-[#FAF3E0] text-[#5C3D2E] hover:bg-[#5C3D2E]/10"
+                 }`}
+                 title={isListening ? "Arrêter l'écoute" : "Poser une question avec votre voix"}
+               >
+                 {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+               </button>
+               <button 
+                 onClick={() => handleSend()}
+                 disabled={isLoading || !input.trim()}
+                 className="p-2.5 bg-[#5C3D2E] text-white rounded-xl hover:bg-[#A66037] transition-all disabled:opacity-50 disabled:grayscale cursor-pointer"
+               >
+                 <Send className="w-4 h-4" />
+               </button>
+            </div>
           </div>
         </div>
       </div>
@@ -285,4 +424,3 @@ export default function NommoAI() {
     </div>
   );
 }
-

@@ -16,7 +16,8 @@ import {
   Filter,
   Edit2,
   Check,
-  X
+  X,
+  Sparkles
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -31,7 +32,9 @@ import {
   Legend,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  BarChart,
+  Bar
 } from "recharts";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -50,6 +53,8 @@ interface DashboardEntry {
   modePaiement?: string;
   clientContact?: string;
   createdBy?: string;
+  createdByName?: string;
+  createdByEmail?: string;
 }
 
 const PIE_COLORS = ["#5C3D2E", "#A66037", "#D4AF37", "#059669", "#3B82F6", "#8B5E3C"];
@@ -66,6 +71,8 @@ export default function DashboardPage() {
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [newGoalInput, setNewGoalInput] = useState("");
   const [particles, setParticles] = useState<{ id: number; x: string; y: string; size: string; delay: string; duration: string; scale: number }[]>([]);
+  const [activeTab, setActiveTab] = useState("overview");
+  const [users, setUsers] = useState<any[]>([]);
   
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -119,6 +126,16 @@ export default function DashboardPage() {
           salesTarget: Number(data.salesTarget || 5000000)
         });
       }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 3b. Fetch users list dynamically
+  useEffect(() => {
+    const q = query(collection(db, "users"), orderBy("displayName", "asc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsers(list);
     });
     return () => unsubscribe();
   }, []);
@@ -240,6 +257,57 @@ export default function DashboardPage() {
     };
   }, [filteredEntries]);
 
+  // 5b. Compute average basket size
+  const avgBasket = useMemo(() => {
+    let t = 0;
+    filteredEntries.forEach(d => {
+      t += d.totalAmount;
+    });
+    return filteredEntries.length > 0 ? Math.round(t / filteredEntries.length) : 0;
+  }, [filteredEntries]);
+
+  // 5c. Compute collaborator stats dynamically
+  const agentPerformance = useMemo(() => {
+    const perfMap: Record<string, { id: string; name: string; email: string; sales: number; paid: number; pending: number; count: number }> = {};
+    
+    users.forEach(u => {
+      perfMap[u.id] = {
+        id: u.id,
+        name: u.displayName || "Agent",
+        email: u.email || "",
+        sales: 0,
+        paid: 0,
+        pending: 0,
+        count: 0
+      };
+    });
+
+    filteredEntries.forEach(e => {
+      const creatorId = e.createdBy;
+      if (!creatorId) return;
+      
+      if (!perfMap[creatorId]) {
+        perfMap[creatorId] = {
+          id: creatorId,
+          name: e.createdByName || "Agent inconnu",
+          email: e.createdByEmail || "",
+          sales: 0,
+          paid: 0,
+          pending: 0,
+          count: 0
+        };
+      }
+
+      perfMap[creatorId].sales += e.totalAmount;
+      perfMap[creatorId].paid += e.paidAmount;
+      perfMap[creatorId].pending += (e.totalAmount - e.paidAmount);
+      perfMap[creatorId].count += 1;
+    });
+
+    return Object.values(perfMap)
+      .sort((a, b) => b.sales - a.sales);
+  }, [filteredEntries, users]);
+
   // 6. Compute AreaChart data (latest 10 entries)
   const chartData = useMemo(() => {
     return filteredEntries.slice(0, 10).reverse().map(e => ({
@@ -358,284 +426,428 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
         <KpiCard title="Total Ventes" value={stats.total} trend="Live" isPositive={true} icon={Target} subtitle="Chiffre d'affaires global" currency={enterprise.currency} />
         <KpiCard title="Encaissements" value={stats.paid} trend="Live" isPositive={true} icon={CreditCard} subtitle="Fonds perçus" currency={enterprise.currency} />
         <KpiCard title="En Attente" value={stats.pending} trend="Recouvrement" isPositive={false} icon={AlertCircle} subtitle="Montant à percevoir" currency={enterprise.currency} />
+        <KpiCard title="Panier Moyen" value={avgBasket.toLocaleString()} trend="Valeur" isPositive={true} icon={Sparkles} subtitle="Moyenne par transaction" currency={enterprise.currency} />
         <KpiCard title="Taux Conversion" value={stats.conversion} trend={stats.conversion} isPositive={true} icon={TrendingUp} subtitle="Encaissé / Total" showCurrency={false} />
         <KpiCard title="Opérations" value={stats.count.toString()} trend="Total" isPositive={true} icon={Activity} subtitle="Saisies enregistrées" showCurrency={false} />
       </div>
 
-      {/* Charts & Target section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Flux de Trésorerie AreaChart */}
-        <div className="chart-box lg:col-span-2 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4]">
-           <h3 className="font-bold text-xl text-primary font-dogon mb-8">Flux de Trésorerie</h3>
-           <div className="h-[350px] w-full">
-              {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData}>
-                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E8DCC460" />
-                     <XAxis dataKey="name" axisLine={false} tickLine={false} fontSize={11} />
-                     <YAxis axisLine={false} tickLine={false} fontSize={11} tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
-                     <Tooltip 
-                       formatter={(value: unknown) => Number(value).toLocaleString() + " " + enterprise.currency}
-                       contentStyle={{ borderRadius: '16px', border: '1px solid #E8DCC4', fontWeight: 'bold' }}
-                     />
-                     <Legend />
-                     <Area type="monotone" dataKey="total" name="Total" stroke="#5C3D2E" strokeWidth={3} fill="#5C3D2E15" />
-                     <Area type="monotone" dataKey="paid" name="Encaissé" stroke="#059669" strokeWidth={2} fill="#05966910" />
-                     <Area type="monotone" dataKey="reste" name="Reste" stroke="#DC2626" strokeWidth={2} fill="#DC262610" strokeDasharray="5 5" />
-                  </AreaChart>
-              </ResponsiveContainer>
-              ) : (
-                <div className="h-full flex items-center justify-center text-[#B89E7E] italic">
-                  Aucune donnée disponible pour le graphique.
-                </div>
-              )}
-           </div>
-        </div>
-
-        {/* Objectif Mensuel Widget */}
-        <div className="chart-box lg:col-span-1 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] flex flex-col justify-between relative overflow-hidden group/target">
-           <div className="absolute inset-0 bg-radial from-[#D4AF37]/5 via-transparent to-transparent opacity-0 group-hover/target:opacity-100 transition-opacity duration-700 pointer-events-none" />
-
-           <div className="relative z-10 flex items-center justify-between">
-             <div>
-                <h3 className="font-bold text-xl text-primary font-dogon mb-1">Objectif du Mois</h3>
-                <p className="text-xs text-[#B89E7E]">Seuil de prospérité commerciale</p>
-             </div>
-             {(profile?.role === "super_admin" || profile?.role === "admin_entreprise") && (
-                <button 
-                  onClick={() => {
-                    setNewGoalInput(enterprise.salesTarget.toString());
-                    setIsEditingGoal(true);
-                  }}
-                  className="p-2 hover:bg-[#FAF3E0] rounded-xl border border-[#E8DCC4] transition-colors cursor-pointer text-[#A66037] hover:text-[#5C3D2E]"
-                >
-                   <Edit2 className="w-4 h-4" />
-                </button>
-             )}
-           </div>
-
-           {/* Editing Form Inline */}
-           {isEditingGoal ? (
-             <form onSubmit={handleUpdateGoal} className="py-6 space-y-4 relative z-10">
-                <div className="space-y-1">
-                   <label className="text-[9px] font-bold text-[#B89E7E] uppercase tracking-wider pl-1">Nouvel Objectif ({enterprise.currency})</label>
-                   <input 
-                     type="number"
-                     value={newGoalInput}
-                     onChange={(e) => setNewGoalInput(e.target.value)}
-                     className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] text-xs font-bold text-primary focus:ring-2 focus:ring-[#D4AF37]/30 outline-none"
-                     autoFocus
-                   />
-                </div>
-                <div className="flex gap-2">
-                   <button 
-                     type="submit"
-                     className="flex-1 py-2.5 rounded-xl bg-[#5C3D2E] text-white font-bold text-xs uppercase hover:bg-[#A66037] transition-all flex items-center justify-center gap-1 cursor-pointer"
-                   >
-                      <Check className="w-3.5 h-3.5" /> Confirmer
-                   </button>
-                   <button 
-                     type="button"
-                     onClick={() => setIsEditingGoal(false)}
-                     className="px-3 py-2.5 rounded-xl border border-[#E8DCC4] text-[#A66037] hover:bg-[#FAF3E0] transition-all cursor-pointer"
-                   >
-                      <X className="w-3.5 h-3.5" />
-                   </button>
-                </div>
-             </form>
-           ) : (
-             <div className="flex flex-col items-center py-6 relative z-10">
-                <div className="relative flex items-center justify-center">
-                   <svg
-                     height={110}
-                     width={110}
-                     className="transform -rotate-90 drop-shadow-md"
-                   >
-                     {/* Track Ring */}
-                     <circle
-                       stroke="#FAF3E0"
-                       fill="transparent"
-                       strokeWidth={8}
-                       r={43}
-                       cx={55}
-                       cy={55}
-                     />
-                     {/* Progress Ring */}
-                     <circle
-                       stroke={progressPercent >= 100 ? "#D4AF37" : "#A66037"}
-                       fill="transparent"
-                       strokeWidth={8}
-                       strokeDasharray={`${2 * Math.PI * 43} ${2 * Math.PI * 43}`}
-                       style={{ strokeDashoffset: (2 * Math.PI * 43) - (progressPercent / 100) * (2 * Math.PI * 43) }}
-                       strokeLinecap="round"
-                       r={43}
-                       cx={55}
-                       cy={55}
-                       className="transition-all duration-1000 ease-out"
-                     />
-                   </svg>
-                   {/* Center Text */}
-                   <div className="absolute flex flex-col items-center">
-                      <span className="text-2xl font-bold font-dogon text-primary leading-none">{progressPercent}%</span>
-                      <span className="text-[9px] text-[#B89E7E] font-bold uppercase tracking-wider mt-1">Atteint</span>
-                   </div>
-                </div>
-
-                <div className="mt-5 text-center">
-                   <p className="text-[10px] text-[#B89E7E] font-bold uppercase tracking-widest">Progression</p>
-                   <p className="text-sm font-bold text-primary mt-1">
-                      {currentMonthSales.toLocaleString()} / {enterprise.salesTarget.toLocaleString()} {enterprise.currency}
-                   </p>
-                </div>
-             </div>
-           )}
-
-           <div className="border-t border-[#E8DCC4]/30 pt-4 flex justify-between items-center relative z-10 text-[10px] text-[#A66037] font-medium">
-              <span>Mois Civil en Cours</span>
-              {progressPercent >= 100 ? (
-                <span className="px-2.5 py-1 bg-[#D4AF37]/10 text-[#D4AF37] font-bold rounded-full uppercase tracking-wider text-[8px] animate-pulse">Grenier Rempli ! 🌾</span>
-              ) : (
-                <span>Reste : {(enterprise.salesTarget - currentMonthSales > 0 ? enterprise.salesTarget - currentMonthSales : 0).toLocaleString()} {enterprise.currency}</span>
-              )}
-           </div>
-        </div>
+      {/* Tab Switcher */}
+      <div className="flex gap-4 border-b border-[#E8DCC4] pb-px">
+        <button
+          onClick={() => setActiveTab("overview")}
+          className={`pb-4 px-4 font-bold text-sm tracking-wide transition-all border-b-2 uppercase cursor-pointer ${
+            activeTab === "overview"
+              ? "border-[#5C3D2E] text-[#5C3D2E]"
+              : "border-transparent text-[#B89E7E] hover:text-[#5C3D2E]"
+          }`}
+        >
+          Vue d&apos;ensemble
+        </button>
+        <button
+          onClick={() => setActiveTab("performance")}
+          className={`pb-4 px-4 font-bold text-sm tracking-wide transition-all border-b-2 uppercase cursor-pointer ${
+            activeTab === "performance"
+              ? "border-[#5C3D2E] text-[#5C3D2E]"
+              : "border-transparent text-[#B89E7E] hover:text-[#5C3D2E]"
+          }`}
+        >
+          Performances Collaborateurs
+        </button>
       </div>
 
-      {/* Recent Operations, PieChart & Urgent Collections Reminders */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-         {/* Left Side: Recent Operations */}
-         <div className="chart-box lg:col-span-2 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] flex flex-col justify-between">
-           <div>
-             <div className="flex items-center justify-between mb-8">
-                 <h3 className="font-bold text-xl text-primary font-dogon">Dernières Opérations</h3>
-                 <Link href="/dashboard/entries" className="text-xs font-bold text-secondary uppercase tracking-[0.2em] flex items-center hover:translate-x-1 transition-transform">
-                    Historique complet <ArrowRight className="ml-1 w-4 h-4" />
-                 </Link>
-             </div>
-             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                 {recentEntries.slice(0, 4).map((entry) => (
-                    <div key={entry.id} className="flex gap-4 p-4 rounded-2xl bg-[#FAF3E0]/30 border border-[#E8DCC4]/50 hover:bg-[#FAF3E0]/50 transition-colors">
-                       <div className="w-10 h-10 rounded-xl bg-[#FAF3E0] flex items-center justify-center shrink-0 border border-[#E8DCC4]">
-                          <User className="w-5 h-5 text-[#5C3D2E]" />
-                       </div>
-                       <div className="min-w-0 flex-1">
-                          <p className="text-xs font-bold text-primary truncate">{entry.clientName || "Client inconnu"}</p>
-                          <p className="text-[10px] text-[#B89E7E] truncate">{entry.companyId}</p>
-                          <p className="text-xs font-bold text-emerald-600 mt-1">{Number(entry.paidAmount).toLocaleString()} {enterprise.currency}</p>
-                          <span className="text-[9px] font-bold text-[#A66037]">
-                            {entry.date ? new Date(entry.date).toLocaleDateString() : "--"}
-                          </span>
+      {activeTab === "overview" ? (
+        <>
+          {/* Charts & Target section */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            {/* Flux de Trésorerie AreaChart */}
+            <div className="chart-box lg:col-span-2 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4]">
+               <h3 className="font-bold text-xl text-primary font-dogon mb-8">Flux de Trésorerie</h3>
+               <div className="h-[350px] w-full">
+                  {chartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={chartData}>
+                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E8DCC460" />
+                         <XAxis dataKey="name" axisLine={false} tickLine={false} fontSize={11} />
+                         <YAxis axisLine={false} tickLine={false} fontSize={11} tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
+                         <Tooltip 
+                           formatter={(value: unknown) => Number(value).toLocaleString() + " " + enterprise.currency}
+                           contentStyle={{ borderRadius: '16px', border: '1px solid #E8DCC4', fontWeight: 'bold' }}
+                         />
+                         <Legend />
+                         <Area type="monotone" dataKey="total" name="Total" stroke="#5C3D2E" strokeWidth={3} fill="#5C3D2E15" />
+                         <Area type="monotone" dataKey="paid" name="Encaissé" stroke="#059669" strokeWidth={2} fill="#05966910" />
+                         <Area type="monotone" dataKey="reste" name="Reste" stroke="#DC2626" strokeWidth={2} fill="#DC262610" strokeDasharray="5 5" />
+                      </AreaChart>
+                  </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-[#B89E7E] italic">
+                      Aucune donnée disponible pour le graphique.
+                    </div>
+                  )}
+               </div>
+            </div>
+
+            {/* Objectif Mensuel Widget */}
+            <div className="chart-box lg:col-span-1 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] flex flex-col justify-between relative overflow-hidden group/target">
+               <div className="absolute inset-0 bg-radial from-[#D4AF37]/5 via-transparent to-transparent opacity-0 group-hover/target:opacity-100 transition-opacity duration-700 pointer-events-none" />
+
+               <div className="relative z-10 flex items-center justify-between">
+                 <div>
+                    <h3 className="font-bold text-xl text-primary font-dogon mb-1">Objectif du Mois</h3>
+                    <p className="text-xs text-[#B89E7E]">Seuil de prospérité commerciale</p>
+                 </div>
+                 {(profile?.role === "super_admin" || profile?.role === "admin_entreprise") && (
+                    <button 
+                      onClick={() => {
+                        setNewGoalInput(enterprise.salesTarget.toString());
+                        setIsEditingGoal(true);
+                      }}
+                      className="p-2 hover:bg-[#FAF3E0] rounded-xl border border-[#E8DCC4] transition-colors cursor-pointer text-[#A66037] hover:text-[#5C3D2E]"
+                    >
+                       <Edit2 className="w-4 h-4" />
+                    </button>
+                 )}
+               </div>
+
+               {/* Editing Form Inline */}
+               {isEditingGoal ? (
+                 <form onSubmit={handleUpdateGoal} className="py-6 space-y-4 relative z-10">
+                    <div className="space-y-1">
+                       <label className="text-[9px] font-bold text-[#B89E7E] uppercase tracking-wider pl-1">Nouvel Objectif ({enterprise.currency})</label>
+                       <input 
+                         type="number"
+                         value={newGoalInput}
+                         onChange={(e) => setNewGoalInput(e.target.value)}
+                         className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] text-xs font-bold text-primary focus:ring-2 focus:ring-[#D4AF37]/30 outline-none"
+                         autoFocus
+                       />
+                    </div>
+                    <div className="flex gap-2">
+                       <button 
+                         type="submit"
+                         className="flex-1 py-2.5 rounded-xl bg-[#5C3D2E] text-white font-bold text-xs uppercase hover:bg-[#A66037] transition-all flex items-center justify-center gap-1 cursor-pointer"
+                       >
+                          <Check className="w-3.5 h-3.5" /> Confirmer
+                       </button>
+                       <button 
+                         type="button"
+                         onClick={() => setIsEditingGoal(false)}
+                         className="px-3 py-2.5 rounded-xl border border-[#E8DCC4] text-[#A66037] hover:bg-[#FAF3E0] transition-all cursor-pointer"
+                       >
+                          <X className="w-3.5 h-3.5" />
+                       </button>
+                    </div>
+                 </form>
+               ) : (
+                 <div className="flex flex-col items-center py-6 relative z-10">
+                    <div className="relative flex items-center justify-center">
+                       <svg
+                         height={110}
+                         width={110}
+                         className="transform -rotate-90 drop-shadow-md"
+                       >
+                         {/* Track Ring */}
+                         <circle
+                           stroke="#FAF3E0"
+                           fill="transparent"
+                           strokeWidth={8}
+                           r={43}
+                           cx={55}
+                           cy={55}
+                         />
+                         {/* Progress Ring */}
+                         <circle
+                           stroke={progressPercent >= 100 ? "#D4AF37" : "#A66037"}
+                           fill="transparent"
+                           strokeWidth={8}
+                           strokeDasharray={`${2 * Math.PI * 43} ${2 * Math.PI * 43}`}
+                           style={{ strokeDashoffset: (2 * Math.PI * 43) - (progressPercent / 100) * (2 * Math.PI * 43) }}
+                           strokeLinecap="round"
+                           r={43}
+                           cx={55}
+                           cy={55}
+                           className="transition-all duration-1000 ease-out"
+                         />
+                       </svg>
+                       {/* Center Text */}
+                       <div className="absolute flex flex-col items-center">
+                          <span className="text-2xl font-bold font-dogon text-primary leading-none">{progressPercent}%</span>
+                          <span className="text-[9px] text-[#B89E7E] font-bold uppercase tracking-wider mt-1">Atteint</span>
                        </div>
                     </div>
-                 ))}
-                 {recentEntries.length === 0 && (
-                    <p className="col-span-full text-center py-10 text-[#B89E7E] italic text-xs">Aucune donnée trouvée.</p>
-                 )}
-             </div>
-           </div>
-         </div>
 
-         {/* Middle: Répartition par mode de paiement PieChart */}
-         <div className="chart-box lg:col-span-1 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] flex flex-col justify-between">
-            <div>
-              <h3 className="font-bold text-xl text-primary font-dogon mb-2">Modes de Paiement</h3>
-              <p className="text-xs text-[#B89E7E] mb-6 font-medium">Répartition de la trésorerie encaissée.</p>
-            </div>
-            <div className="h-[180px] w-full flex items-center justify-center relative">
-               {pieData.length > 0 ? (
-                 <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={pieData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={45}
-                        outerRadius={65}
-                        paddingAngle={4}
-                        dataKey="value"
-                      >
-                        {pieData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip 
-                        formatter={(value: unknown) => Number(value).toLocaleString() + " " + enterprise.currency}
-                        contentStyle={{ borderRadius: '12px', border: '1px solid #E8DCC4', fontWeight: 'bold', fontSize: 11 }}
-                      />
-                    </PieChart>
-                 </ResponsiveContainer>
-               ) : (
-                 <div className="text-center text-[#B89E7E] italic text-xs">
-                   Aucun encaissement sur cette période.
+                    <div className="mt-5 text-center">
+                       <p className="text-[10px] text-[#B89E7E] font-bold uppercase tracking-widest">Progression</p>
+                       <p className="text-sm font-bold text-primary mt-1">
+                          {currentMonthSales.toLocaleString()} / {enterprise.salesTarget.toLocaleString()} {enterprise.currency}
+                       </p>
+                    </div>
                  </div>
                )}
-            </div>
-            {pieData.length > 0 && (
-              <div className="flex flex-wrap gap-x-2 gap-y-1 justify-center mt-3">
-                 {pieData.map((d, i) => (
-                   <div key={d.name} className="flex items-center gap-1 text-[9px] font-bold text-primary">
-                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
-                     <span>{d.name}</span>
-                   </div>
-                 ))}
-              </div>
-            )}
-         </div>
 
-         {/* Right Side: Relances Prioritaires */}
-         <div className="chart-box lg:col-span-1 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] flex flex-col justify-between">
-           <div>
-             <div className="flex items-center gap-2 mb-2">
-                 <AlertCircle className="w-5 h-5 text-red-500 animate-pulse" />
-                 <h3 className="font-bold text-xl text-primary font-dogon">Relances</h3>
+               <div className="border-t border-[#E8DCC4]/30 pt-4 flex justify-between items-center relative z-10 text-[10px] text-[#A66037] font-medium">
+                  <span>Mois Civil en Cours</span>
+                  {progressPercent >= 100 ? (
+                    <span className="px-2.5 py-1 bg-[#D4AF37]/10 text-[#D4AF37] font-bold rounded-full uppercase tracking-wider text-[8px] animate-pulse">Grenier Rempli ! 🌾</span>
+                  ) : (
+                    <span>Reste : {(enterprise.salesTarget - currentMonthSales > 0 ? enterprise.salesTarget - currentMonthSales : 0).toLocaleString()} {enterprise.currency}</span>
+                  )}
+               </div>
+            </div>
+          </div>
+
+          {/* Recent Operations, PieChart & Urgent Collections Reminders */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+             {/* Left Side: Recent Operations */}
+             <div className="chart-box lg:col-span-2 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] flex flex-col justify-between">
+               <div>
+                 <div className="flex items-center justify-between mb-8">
+                     <h3 className="font-bold text-xl text-primary font-dogon">Dernières Opérations</h3>
+                     <Link href="/dashboard/entries" className="text-xs font-bold text-secondary uppercase tracking-[0.2em] flex items-center hover:translate-x-1 transition-transform">
+                        Historique complet <ArrowRight className="ml-1 w-4 h-4" />
+                     </Link>
+                 </div>
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                     {recentEntries.slice(0, 4).map((entry) => (
+                        <div key={entry.id} className="flex gap-4 p-4 rounded-2xl bg-[#FAF3E0]/30 border border-[#E8DCC4]/50 hover:bg-[#FAF3E0]/50 transition-colors">
+                           <div className="w-10 h-10 rounded-xl bg-[#FAF3E0] flex items-center justify-center shrink-0 border border-[#E8DCC4]">
+                              <User className="w-5 h-5 text-[#5C3D2E]" />
+                           </div>
+                           <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-primary truncate">{entry.clientName || "Client inconnu"}</p>
+                              <p className="text-[10px] text-[#B89E7E] truncate">{entry.companyId}</p>
+                              <p className="text-xs font-bold text-emerald-600 mt-1">{Number(entry.paidAmount).toLocaleString()} {enterprise.currency}</p>
+                              <span className="text-[9px] font-bold text-[#A66037]">
+                                {entry.date ? new Date(entry.date).toLocaleDateString() : "--"}
+                              </span>
+                           </div>
+                        </div>
+                     ))}
+                     {recentEntries.length === 0 && (
+                        <p className="col-span-full text-center py-10 text-[#B89E7E] italic text-xs">Aucune donnée trouvée.</p>
+                     )}
+                 </div>
+               </div>
              </div>
-             <p className="text-xs text-[#B89E7E] mb-6 font-medium">Restes à recouvrer les plus élevés.</p>
-             
-             <div className="space-y-4">
-                 {filteredEntries
-                   .filter(e => e.resteAVerser > 0)
-                   .sort((a, b) => b.resteAVerser - a.resteAVerser)
-                   .slice(0, 3)
-                   .map((entry) => {
-                      // Generate WhatsApp reminder link
-                      const cleanPhone = entry.clientContact?.replace(/[^0-9]/g, "") || "";
-                      const waMsg = encodeURIComponent(`Bonjour ${entry.clientName}, nous vous contactons concernant votre règlement en attente pour un montant de ${entry.resteAVerser.toLocaleString()} ${enterprise.currency}. Merci de nous recontacter pour régulariser votre situation.`);
-                      const waLink = `https://wa.me/${cleanPhone}?text=${waMsg}`;
-                      
-                      return (
-                         <div key={entry.id} className="p-3 rounded-2xl bg-red-50/20 border border-red-100/50 flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                               <p className="text-xs font-bold text-primary truncate">{entry.clientName}</p>
-                               <p className="text-[10px] text-red-500 font-bold">Reste: {entry.resteAVerser.toLocaleString()}</p>
-                               <p className="text-[9px] text-[#B89E7E] truncate">{entry.clientContact || "Pas de contact"}</p>
-                            </div>
-                            {cleanPhone && (
-                               <a 
-                                  href={waLink} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
-                                  className="px-2.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-[8px] font-bold uppercase transition-all shrink-0 hover:scale-105 active:scale-95 flex items-center gap-1 shadow-sm shadow-emerald-500/10 cursor-pointer"
-                               >
-                                  Relancer
-                               </a>
-                            )}
-                         </div>
-                      );
-                   })}
-                 {filteredEntries.filter(e => e.resteAVerser > 0).length === 0 && (
-                    <div className="py-8 text-center text-emerald-600 font-bold text-[10px] uppercase tracking-wide">
-                       Aucune relance en attente 🎉
+
+             {/* Middle: Répartition par mode de paiement PieChart */}
+             <div className="chart-box lg:col-span-1 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] flex flex-col justify-between">
+                <div>
+                  <h3 className="font-bold text-xl text-primary font-dogon mb-2">Modes de Paiement</h3>
+                  <p className="text-xs text-[#B89E7E] mb-6 font-medium">Répartition de la trésorerie encaissée.</p>
+                </div>
+                <div className="h-[180px] w-full flex items-center justify-center relative">
+                   {pieData.length > 0 ? (
+                     <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={pieData}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={45}
+                            outerRadius={65}
+                            paddingAngle={4}
+                            dataKey="value"
+                          >
+                            {pieData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip 
+                            formatter={(value: unknown) => Number(value).toLocaleString() + " " + enterprise.currency}
+                            contentStyle={{ borderRadius: '12px', border: '1px solid #E8DCC4', fontWeight: 'bold', fontSize: 11 }}
+                          />
+                        </PieChart>
+                     </ResponsiveContainer>
+                   ) : (
+                     <div className="text-center text-[#B89E7E] italic text-xs">
+                       Aucun encaissement sur cette période.
+                     </div>
+                   )}
+                </div>
+                {pieData.length > 0 && (
+                  <div className="flex flex-wrap gap-x-2 gap-y-1 justify-center mt-3">
+                     {pieData.map((d, i) => (
+                       <div key={d.name} className="flex items-center gap-1 text-[9px] font-bold text-primary">
+                         <span className="w-2 h-2 rounded-full" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
+                         <span>{d.name}</span>
+                       </div>
+                     ))}
+                  </div>
+                )}
+             </div>
+
+             {/* Right Side: Relances Prioritaires */}
+             <div className="chart-box lg:col-span-1 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] flex flex-col justify-between">
+               <div>
+                 <div className="flex items-center gap-2 mb-2">
+                     <AlertCircle className="w-5 h-5 text-red-500 animate-pulse" />
+                     <h3 className="font-bold text-xl text-primary font-dogon">Relances</h3>
+                 </div>
+                 <p className="text-xs text-[#B89E7E] mb-6 font-medium">Restes à recouvrer les plus élevés.</p>
+                 
+                 <div className="space-y-4">
+                     {filteredEntries
+                       .filter(e => e.resteAVerser > 0)
+                       .sort((a, b) => b.resteAVerser - a.resteAVerser)
+                       .slice(0, 3)
+                       .map((entry) => {
+                          // Generate WhatsApp reminder link
+                          const cleanPhone = entry.clientContact?.replace(/[^0-9]/g, "") || "";
+                          const waMsg = encodeURIComponent(`Bonjour ${entry.clientName}, nous vous contactons concernant votre règlement en attente pour un montant de ${entry.resteAVerser.toLocaleString()} ${enterprise.currency}. Merci de nous recontacter pour régulariser votre situation.`);
+                          const waLink = `https://wa.me/${cleanPhone}?text=${waMsg}`;
+                          
+                          return (
+                             <div key={entry.id} className="p-3 rounded-2xl bg-red-50/20 border border-red-100/50 flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                   <p className="text-xs font-bold text-primary truncate">{entry.clientName}</p>
+                                   <p className="text-[10px] text-red-500 font-bold">Reste: {entry.resteAVerser.toLocaleString()}</p>
+                                   <p className="text-[9px] text-[#B89E7E] truncate">{entry.clientContact || "Pas de contact"}</p>
+                                </div>
+                                {cleanPhone && (
+                                   <a 
+                                      href={waLink} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer" 
+                                      className="px-2.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-[8px] font-bold uppercase transition-all shrink-0 hover:scale-105 active:scale-95 flex items-center gap-1 shadow-sm shadow-emerald-500/10 cursor-pointer"
+                                   >
+                                      Relancer
+                                   </a>
+                                )}
+                             </div>
+                          );
+                       })}
+                     {filteredEntries.filter(e => e.resteAVerser > 0).length === 0 && (
+                        <div className="py-8 text-center text-emerald-600 font-bold text-[10px] uppercase tracking-wide">
+                           Aucune relance en attente 🎉
+                        </div>
+                     )}
+                 </div>
+               </div>
+             </div>
+          </div>
+        </>
+      ) : (
+        /* Performances Collaborateurs View */
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+           {/* Horizontal Bar Chart */}
+           <div className="chart-box lg:col-span-1 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4]">
+              <h3 className="font-bold text-xl text-primary font-dogon mb-2">Performances Comparées</h3>
+              <p className="text-xs text-[#B89E7E] mb-8">Classement graphique des ventes et encaissements par agent commercial.</p>
+              <div className="h-[400px] w-full">
+                 {agentPerformance.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                       <BarChart data={agentPerformance.slice(0, 6)} layout="vertical" margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E8DCC460" />
+                          <XAxis type="number" stroke="#B89E7E" fontSize={10} tickLine={false} tickFormatter={(v) => v >= 1000 ? `${(v/1000).toLocaleString()}k` : v} />
+                          <YAxis dataKey="name" type="category" stroke="#B89E7E" fontSize={10} tickLine={false} width={80} />
+                          <Tooltip 
+                            formatter={(value: any) => [`${Number(value).toLocaleString()} ${enterprise.currency}`, "Montant"]}
+                            contentStyle={{ backgroundColor: "#FAF3E0", borderRadius: "16px", border: "1px solid #E8DCC4", fontSize: "11px", fontFamily: "Outfit" }}
+                          />
+                          <Legend />
+                          <Bar dataKey="sales" name="Ventes" fill="#A66037" radius={[0, 6, 6, 0]} />
+                          <Bar dataKey="paid" name="Encaissé" fill="#059669" radius={[0, 6, 6, 0]} />
+                       </BarChart>
+                    </ResponsiveContainer>
+                 ) : (
+                    <div className="h-full flex items-center justify-center text-[#B89E7E] italic text-xs">
+                      Aucune donnée de performance disponible.
                     </div>
                  )}
-             </div>
+              </div>
            </div>
-         </div>
-      </div>
+
+           {/* Leaderboard Honor Roll */}
+           <div className="chart-box lg:col-span-2 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4]">
+              <h3 className="font-bold text-xl text-primary font-dogon mb-2">Tableau d&apos;Honneur</h3>
+              <p className="text-xs text-[#B89E7E] mb-8">Médailles et indicateurs de performance des forces de vente.</p>
+              
+              <div className="overflow-x-auto">
+                 <table className="w-full text-left">
+                    <thead className="bg-[#FAF3E0]/50 text-[#B89E7E] text-[10px] font-bold uppercase tracking-[0.2em]">
+                       <tr>
+                          <th className="px-6 py-4">Rang</th>
+                          <th className="px-6 py-4">Collaborateur</th>
+                          <th className="px-6 py-4">Saisies</th>
+                          <th className="px-6 py-4">Total Ventes</th>
+                          <th className="px-6 py-4">Encaissé</th>
+                          <th className="px-6 py-4">Taux Recouvr.</th>
+                       </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#E8DCC4]/20">
+                       {agentPerformance.map((agent, index) => {
+                          const rank = index + 1;
+                          const rate = agent.sales > 0 ? Math.round((agent.paid / agent.sales) * 100) : 0;
+                          
+                          return (
+                             <tr key={agent.id} className="hover:bg-[#FAF3E0]/15 transition-colors">
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                   {rank === 1 ? (
+                                      <span className="px-2 py-1 bg-yellow-100 text-yellow-700 font-bold rounded-lg text-xs flex items-center gap-1 w-fit border border-yellow-200">
+                                         🥇 Or
+                                      </span>
+                                   ) : rank === 2 ? (
+                                      <span className="px-2 py-1 bg-slate-100 text-slate-700 font-bold rounded-lg text-xs flex items-center gap-1 w-fit border border-slate-200">
+                                         🥈 Argent
+                                      </span>
+                                   ) : rank === 3 ? (
+                                      <span className="px-2 py-1 bg-orange-100 text-orange-700 font-bold rounded-lg text-xs flex items-center gap-1 w-fit border border-orange-200">
+                                         🥉 Bronze
+                                      </span>
+                                   ) : (
+                                      <span className="text-xs font-bold text-[#B89E7E] px-2">#{rank}</span>
+                                   )}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                   <div className="flex items-center gap-3">
+                                      <div className="w-8 h-8 rounded-full bg-[#5C3D2E] text-white flex items-center justify-center font-bold text-xs">
+                                         {agent.name.charAt(0)}
+                                      </div>
+                                      <div>
+                                         <p className="text-xs font-bold text-primary">{agent.name}</p>
+                                         <p className="text-[10px] text-[#B89E7E]">{agent.email}</p>
+                                      </div>
+                                   </div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-xs font-bold text-[#5C3D2E]">
+                                   {agent.count} ops
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-xs font-bold text-[#5C3D2E]">
+                                   {agent.sales.toLocaleString()} {enterprise.currency}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-xs font-bold text-emerald-600">
+                                   {agent.paid.toLocaleString()} {enterprise.currency}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                   <div className="flex items-center gap-2">
+                                      <div className="w-12 bg-[#FAF3E0] h-2 rounded-full overflow-hidden border border-[#E8DCC4]/50">
+                                         <div className="bg-[#059669] h-full rounded-full" style={{ width: `${rate}%` }} />
+                                      </div>
+                                      <span className="text-xs font-bold text-[#059669]">{rate}%</span>
+                                   </div>
+                                </td>
+                             </tr>
+                          );
+                       })}
+                       {agentPerformance.length === 0 && (
+                          <tr>
+                             <td colSpan={6} className="px-6 py-10 text-center text-[#B89E7E] italic text-xs uppercase tracking-widest">
+                                Aucun agent actif trouvé.
+                             </td>
+                          </tr>
+                       )}
+                    </tbody>
+                 </table>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 }
