@@ -215,25 +215,117 @@ body {
   background: #FEF2F2;
 }
 
-/* Manual Dark Mode Theme override */
+/* ============================================================
+   COMPREHENSIVE DARK MODE SYSTEM
+   Covers all hardcoded Tailwind color classes used in the app.
+   .dark is toggled on the root wrapper in dashboard/layout.tsx.
+   ============================================================ */
+
+/* --- 1. CSS Custom Properties (Dark Theme) --- */
 .dark {
   --background: #1A0F0A;
   --foreground: #F7EAE3;
   --card: #2D1A12;
   --border: #5C3D2E;
+  --primary: #F7EAE3;
+  --secondary: #D4AF37;
+  --accent: #D4AF37;
   color: var(--foreground) !important;
 }
 
-.dark body {
-  background-color: var(--background);
-  color: var(--foreground);
+.dark body,
+.dark .min-h-full {
+  background-color: var(--background) !important;
+  color: var(--foreground) !important;
 }
 
+/* --- 2. Force dark background on root layout body --- */
+.dark.bg-\[\#FAF3E0\],
+.dark .bg-\[\#FAF3E0\] {
+  background-color: #1A0F0A !important;
+}
+
+/* --- 3. Background Overrides --- */
 .dark .bg-white {
   background-color: #2D1A12 !important;
   color: #F7EAE3 !important;
 }
 
+.dark .bg-white\/80 {
+  background-color: rgba(45, 26, 18, 0.85) !important;
+  color: #F7EAE3 !important;
+}
+
+.dark .bg-white\/50 {
+  background-color: rgba(45, 26, 18, 0.5) !important;
+}
+
+.dark .bg-white\/5 {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.dark .bg-\[\#FAF3E0\]\/30 {
+  background-color: rgba(92, 61, 46, 0.25) !important;
+}
+
+.dark .bg-\[\#FAF3E0\]\/40 {
+  background-color: rgba(92, 61, 46, 0.3) !important;
+}
+
+.dark .bg-\[\#FAF3E0\]\/50 {
+  background-color: rgba(92, 61, 46, 0.35) !important;
+}
+
+.dark .bg-\[\#FAF3E0\]\/70 {
+  background-color: rgba(92, 61, 46, 0.5) !important;
+}
+
+.dark .bg-\[\#FAF3E0\]\/95 {
+  background-color: rgba(26, 15, 10, 0.95) !important;
+}
+
+.dark .bg-\[\#FAF3E0\]\/15 {
+  background-color: rgba(92, 61, 46, 0.12) !important;
+}
+
+/* Status badge backgrounds */
+.dark .bg-emerald-50 {
+  background-color: rgba(5, 150, 105, 0.15) !important;
+}
+
+.dark .bg-amber-50 {
+  background-color: rgba(217, 119, 6, 0.15) !important;
+}
+
+.dark .bg-blue-50 {
+  background-color: rgba(59, 130, 246, 0.15) !important;
+}
+
+.dark .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+}
+
+.dark .bg-red-50\/20 {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+}
+
+.dark .bg-purple-50 {
+  background-color: rgba(168, 85, 247, 0.15) !important;
+}
+
+.dark .bg-yellow-100 {
+  background-color: rgba(250, 204, 21, 0.15) !important;
+}
+
+.dark .bg-slate-100 {
+  background-color: rgba(148, 163, 184, 0.15) !important;
+}
+
+.dark .bg-orange-100 {
+  background-color: rgba(251, 146, 60, 0.15) !important;
+}
+
+/* --- 4. Text Color Overrides --- */
 .dark .text-primary {
   color: #F7EAE3 !important;
 }
@@ -251,13 +343,75 @@ body {
 }
 
 .dark .text-\[\#B89E7E\] {
-  color: #E8DCC4 !important;
+  color: #C4A882 !important;
+}
+
+.dark .text-\[\#1A0F0A\] {
+  color: #F7EAE3 !important;
 }
 
 .dark .text-secondary {
   color: #D4AF37 !important;
 }
 
+.dark .text-foreground {
+  color: #F7EAE3 !important;
+}
+
+.dark .text-slate-500 {
+  color: #B89E7E !important;
+}
+
+.dark .text-slate-400 {
+  color: #C4A882 !important;
+}
+
+.dark .text-slate-300 {
+  color: #D4C4A8 !important;
+}
+
+/* Keep colored text legible */
+.dark .text-emerald-600 {
+  color: #34d399 !important;
+}
+
+.dark .text-emerald-700 {
+  color: #6ee7b7 !important;
+}
+
+.dark .text-red-500 {
+  color: #f87171 !important;
+}
+
+.dark .text-red-600 {
+  color: #f87171 !important;
+}
+
+.dark .text-amber-700 {
+  color: #fcd34d !important;
+}
+
+.dark .text-blue-700 {
+  color: #93c5fd !important;
+}
+
+.dark .text-purple-700 {
+  color: #c4b5fd !important;
+}
+
+.dark .text-yellow-700 {
+  color: #fde047 !important;
+}
+
+.dark .text-slate-700 {
+  color: #cbd5e1 !important;
+}
+
+.dark .text-orange-700 {
+  color: #fdba74 !important;
+}
+
+/* --- 5. Border Color Overrides --- */
 .dark .border-\[\#E8DCC4\] {
   border-color: #5C3D2E !important;
 }
@@ -266,24 +420,53 @@ body {
   border-color: rgba(92, 61, 46, 0.4) !important;
 }
 
-.dark .bg-\[\#FAF3E0\]\/30 {
-  background-color: rgba(92, 61, 46, 0.25) !important;
+.dark .border-\[\#E8DCC4\]\/30 {
+  border-color: rgba(92, 61, 46, 0.3) !important;
 }
 
-.dark .bg-\[\#FAF3E0\]\/50 {
-  background-color: rgba(92, 61, 46, 0.35) !important;
+.dark .border-\[\#E8DCC4\]\/20 {
+  border-color: rgba(92, 61, 46, 0.2) !important;
 }
 
-.dark .bg-\[\#FAF3E0\]\/40 {
-  background-color: rgba(92, 61, 46, 0.3) !important;
+.dark .border-white\/10 {
+  border-color: rgba(255, 255, 255, 0.08) !important;
 }
 
-.dark .bg-\[\#FAF3E0\] {
-  background-color: #5C3D2E !important;
+.dark .border-white\/20 {
+  border-color: rgba(255, 255, 255, 0.12) !important;
 }
 
-.dark select, .dark input {
+.dark .border-red-100 {
+  border-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+.dark .border-red-100\/50 {
+  border-color: rgba(239, 68, 68, 0.15) !important;
+}
+
+.dark .border-yellow-200 {
+  border-color: rgba(250, 204, 21, 0.25) !important;
+}
+
+.dark .border-slate-200 {
+  border-color: rgba(148, 163, 184, 0.25) !important;
+}
+
+.dark .border-orange-200 {
+  border-color: rgba(251, 146, 60, 0.25) !important;
+}
+
+.dark .divide-\[\#E8DCC4\]\/20 > :not(:last-child) {
+  border-color: rgba(92, 61, 46, 0.2) !important;
+}
+
+/* --- 6. Form Elements --- */
+.dark select,
+.dark input,
+.dark textarea {
   color: #F7EAE3 !important;
+  background-color: #2D1A12 !important;
+  border-color: #5C3D2E !important;
 }
 
 .dark select option {
@@ -291,9 +474,43 @@ body {
   color: #F7EAE3 !important;
 }
 
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #8B5E3C !important;
+}
+
+/* Make sure input backgrounds inside modals and cards are slightly lighter */
+.dark input[type="text"],
+.dark input[type="email"],
+.dark input[type="number"],
+.dark input[type="tel"],
+.dark input[type="date"],
+.dark input[type="password"] {
+  background-color: rgba(92, 61, 46, 0.3) !important;
+  color: #F7EAE3 !important;
+}
+
+.dark select {
+  background-color: rgba(92, 61, 46, 0.3) !important;
+  color: #FAF3E0 !important;
+}
+
+/* --- 7. Header --- */
+.dark header {
+  background-color: rgba(45, 26, 18, 0.85) !important;
+  border-color: #5C3D2E !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+.dark header input {
+  background-color: transparent !important;
+}
+
+/* --- 8. Dropdown Menu --- */
 .dark .dropdown-menu {
   background-color: #2D1A12 !important;
   border-color: #5C3D2E !important;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5) !important;
 }
 
 .dark .dropdown-item {
@@ -303,6 +520,108 @@ body {
 .dark .dropdown-item:hover {
   background-color: #5C3D2E !important;
   color: #D4AF37 !important;
+}
+
+.dark .dropdown-item.danger {
+  color: #f87171 !important;
+}
+
+.dark .dropdown-item.danger:hover {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+}
+
+/* --- 9. Table --- */
+.dark table thead {
+  background-color: rgba(92, 61, 46, 0.3) !important;
+}
+
+.dark table tbody tr:hover {
+  background-color: rgba(92, 61, 46, 0.15) !important;
+}
+
+.dark table tbody td {
+  color: #F7EAE3 !important;
+}
+
+/* --- 10. Charts / Cards / Containers --- */
+.dark .bg-\[\#5C3D2E\] {
+  background-color: #5C3D2E !important;
+}
+
+.dark .bg-\[\#2D1A12\] {
+  background-color: #2D1A12 !important;
+}
+
+.dark .bg-\[\#1A0F0A\] {
+  background-color: #1A0F0A !important;
+}
+
+/* Recharts tooltip */
+.dark .recharts-default-tooltip {
+  background-color: #2D1A12 !important;
+  border-color: #5C3D2E !important;
+  color: #F7EAE3 !important;
+}
+
+/* --- 11. Modal Overrides --- */
+.dark .bg-\[\#FAF3E0\] {
+  background-color: #1A0F0A !important;
+}
+
+/* Modal background itself - specific high-specificity selector */
+.dark [class*="bg-\\[\\#FAF3E0\\]"] {
+  background-color: #1A0F0A !important;
+}
+
+/* --- 12. Sidebar active nav item keeps dark text on gold */
+.dark .nav-item.bg-\[\#D4AF37\],
+.dark .nav-item.bg-\[\#D4AF37\] * {
+  color: #2D1A12 !important;
+}
+
+/* --- 13. Dogon Card in dark mode */
+.dark .dogon-card {
+  background: #2D1A12 !important;
+  border-color: #5C3D2E !important;
+}
+
+/* --- 14. Settings page toggle inactive */
+.dark .toggle-switch.inactive {
+  background-color: #5C3D2E;
+}
+
+/* --- 15. KPI / Stat Card text */
+.dark .font-dogon {
+  color: inherit;
+}
+
+/* --- 16. Shimmer loading in dark */
+.dark .shimmer {
+  background: linear-gradient(90deg, #2D1A12 25%, #5C3D2E 37%, #2D1A12 63%);
+  background-size: 200% 100%;
+}
+
+/* --- 17. Scrollbar dark mode --- */
+.dark ::-webkit-scrollbar-track {
+  background: #1A0F0A;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #5C3D2E;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #A66037;
+}
+
+/* --- 18. Prevent OS dark mode from breaking light mode ---
+   When the user has NOT toggled dark mode but their OS prefers dark,
+   force the light palette on all elements inside the non-.dark wrapper. */
+@media (prefers-color-scheme: dark) {
+  html:not(:has(.dark)) body,
+  html:not(:has(.dark)) {
+    color-scheme: light;
+  }
 }
 
 /* Sound Wave Animation */
@@ -353,26 +672,6 @@ body {
   }
 }
 
-/* Ensure active nav items in the sidebar maintain dark text for contrast on gold */
-.dark .nav-item.bg-\[\#D4AF37\],
-.dark .nav-item.bg-\[\#D4AF37\] * {
-  color: #2D1A12 !important;
-}
-
-/* Supplemental Dark Mode Fixes */
-.dark header {
-  background-color: rgba(45, 26, 18, 0.8) !important;
-  border-color: #5C3D2E !important;
-}
-
-.dark input::placeholder {
-  color: #8B5E3C !important;
-}
-
-.dark select {
-  background-color: #2D1A12 !important;
-  color: #FAF3E0 !important;
-}
 
 /* Microphone pulse animation when listening */
 @keyframes mic-pulse {

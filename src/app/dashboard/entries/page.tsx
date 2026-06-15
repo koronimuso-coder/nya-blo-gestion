@@ -500,10 +500,15 @@ export default function EntriesPage() {
                   </td>
                   <td className="px-8 py-6">
                     <div className="flex items-center gap-3">
-                       <div className="w-8 h-8 rounded-full bg-[#5C3D2E] text-[#FAF3E0] flex items-center justify-center text-[10px] font-bold">
+                       <div className="w-8 h-8 rounded-full bg-[#5C3D2E] text-[#FAF3E0] flex items-center justify-center text-[10px] font-bold shrink-0">
                           {entry.clientName?.substring(0, 2).toUpperCase() || "C"}
                        </div>
-                       <span className="font-semibold text-[#2D1A12] text-sm whitespace-nowrap">{entry.clientName || "Client inconnu"}</span>
+                       <div className="flex flex-col">
+                          <span className="font-semibold text-[#2D1A12] text-sm whitespace-nowrap">{entry.clientName || "Client inconnu"}</span>
+                          {entry.clientContact && (
+                            <span className="text-[10px] text-[#B89E7E] font-medium leading-none mt-0.5">{entry.clientContact}</span>
+                          )}
+                       </div>
                     </div>
                   </td>
                   <td className="px-8 py-6">

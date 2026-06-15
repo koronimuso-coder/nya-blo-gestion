@@ -29,11 +29,22 @@ export default function DashboardLayout({
   // Load theme preference on mount
   useEffect(() => {
     const savedTheme = localStorage.getItem("theme");
+    let isDark = false;
     if (savedTheme) {
-      setIsDarkMode(savedTheme === "dark");
+      isDark = savedTheme === "dark";
     } else {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      setIsDarkMode(prefersDark);
+      isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    setIsDarkMode(isDark);
+    // Also set on documentElement so body inherits dark styles
+    if (isDark) {
+      document.documentElement.classList.add("dark");
+      document.body.style.backgroundColor = "#1A0F0A";
+      document.body.style.color = "#F7EAE3";
+    } else {
+      document.documentElement.classList.remove("dark");
+      document.body.style.backgroundColor = "#FAF3E0";
+      document.body.style.color = "#2D1A12";
     }
   }, []);
 
@@ -47,10 +58,17 @@ export default function DashboardLayout({
     setIsDarkMode(nextMode);
     if (nextMode) {
       localStorage.setItem("theme", "dark");
+      document.documentElement.classList.add("dark");
+      document.body.style.backgroundColor = "#1A0F0A";
+      document.body.style.color = "#F7EAE3";
     } else {
       localStorage.setItem("theme", "light");
+      document.documentElement.classList.remove("dark");
+      document.body.style.backgroundColor = "#FAF3E0";
+      document.body.style.color = "#2D1A12";
     }
   };
+
 
   if (loading || !user) {
     return (

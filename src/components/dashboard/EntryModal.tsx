@@ -53,6 +53,24 @@ interface EntryItem {
   modePaiement: string;
 }
 
+const ENGINS_PRICES: Record<string, number> = {
+  "Carte Opérateur": 15000,
+  "Chariot élévateur": 130000,
+  "HSE": 130000,
+  "Anglais Minier": 150000,
+  "Bobcat": 150000,
+  "Pelle hydraulique": 195000,
+  "Chargeuse": 195000,
+  "Échafaudage": 200000,
+  "Sino-Truk": 230000,
+  "Challenger": 245000,
+  "Grue Mobile": 245000,
+  "Grue Auxiliaire": 250000,
+  "Malaxeur": 250000,
+  "Tombereau Articulé": 295000,
+  "Tombereau Rigide": 295000,
+};
+
 const createEmptyItem = (): EntryItem => ({
   id: Math.random().toString(),
   clientName: "",
@@ -400,95 +418,132 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
                     )}
                  </div>
 
-                 <div className="space-y-4">
-                    {items.map((item, index) => (
-                       <div key={item.id} className="relative bg-white p-6 rounded-[32px] border border-[#E8DCC4] shadow-sm hover:shadow-md transition-shadow grid grid-cols-1 md:grid-cols-7 gap-4 items-end">
-                          <div className="md:col-span-1 space-y-2">
-                             <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Nom</label>
-                             <input 
-                               required
-                               value={item.clientName}
-                               onChange={(e) => updateItem(item.id, 'clientName', e.target.value)}
-                               className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm outline-none transition-all" 
-                             />
-                          </div>
-                          <div className="md:col-span-1 space-y-2">
-                             <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Engin</label>
-                             <input 
-                               value={item.engin}
-                               onChange={(e) => updateItem(item.id, 'engin', e.target.value)}
-                               className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm outline-none transition-all" 
-                             />
-                          </div>
-                          <div className="md:col-span-1 space-y-2">
-                             <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Motif</label>
-                             <input 
-                               value={item.motif}
-                               onChange={(e) => updateItem(item.id, 'motif', e.target.value)}
-                               className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm outline-none transition-all" 
-                             />
-                          </div>
-                          <div className="md:col-span-1 space-y-2">
-                             <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Total</label>
-                             <input 
-                               type="number"
-                               required
-                               value={item.totalAmount}
-                               onChange={(e) => updateItem(item.id, 'totalAmount', e.target.value)}
-                               className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm text-primary outline-none transition-all" 
-                             />
-                          </div>
-                          <div className="md:col-span-1 space-y-2">
-                             <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Versé</label>
-                             <input 
-                               type="number"
-                               required
-                               value={item.paidAmount}
-                               onChange={(e) => updateItem(item.id, 'paidAmount', e.target.value)}
-                               className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm text-emerald-600 outline-none transition-all" 
-                             />
-                          </div>
-                          <div className="md:col-span-1 space-y-2">
-                             <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Canal</label>
-                             <select 
-                               value={item.canal}
-                               onChange={(e) => updateItem(item.id, 'canal', e.target.value)}
-                               className="w-full px-3 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] text-xs font-bold appearance-none outline-none transition-all"
-                             >
-                                <option>Social</option>
-                                <option>Direct</option>
-                                <option>Referral</option>
-                             </select>
-                          </div>
-                          <div className="flex gap-2">
-                             <div className="flex-1 space-y-2">
-                                <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Paiement</label>
-                                <select 
-                                  value={item.modePaiement}
-                                  onChange={(e) => updateItem(item.id, 'modePaiement', e.target.value)}
-                                  className="w-full px-3 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] text-sm font-bold appearance-none outline-none transition-all"
-                                >
-                                   <option>Espèces</option>
-                                   <option>Wave</option>
-                                   <option>OM</option>
-                                   <option>Momo</option>
-                                   <option>Virement</option>
-                                   <option>Chèque</option>
-                                </select>
-                             </div>
-                             {items.length > 1 && (
-                                <button 
-                                  type="button" 
-                                  onClick={() => removeItem(item.id)}
-                                  className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all flex items-center justify-center self-end"
-                                >
-                                   <Trash2 className="w-4 h-4" />
-                                </button>
-                             )}
-                          </div>
-                       </div>
-                    ))}
-                 </div>
+                  <div className="space-y-6">
+                     {items.map((item, index) => (
+                        <div key={item.id} className="relative bg-white p-6 rounded-[32px] border border-[#E8DCC4] shadow-sm hover:shadow-md transition-shadow space-y-4">
+                           {/* Row 1: Nom, Numéro, Engin, Motif */}
+                           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                              <div className="space-y-2">
+                                 <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Nom *</label>
+                                 <input 
+                                   required
+                                   value={item.clientName}
+                                   onChange={(e) => updateItem(item.id, 'clientName', e.target.value)}
+                                   className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm outline-none transition-all" 
+                                 />
+                              </div>
+                              <div className="space-y-2">
+                                 <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Numéro *</label>
+                                 <input 
+                                   required
+                                   type="tel"
+                                   value={item.clientContact}
+                                   onChange={(e) => updateItem(item.id, 'clientContact', e.target.value)}
+                                   placeholder="Ex: +225..."
+                                   className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm outline-none transition-all" 
+                                 />
+                              </div>
+                              <div className="space-y-2">
+                                 <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Engin *</label>
+                                 <select 
+                                   value={item.engin}
+                                   onChange={(e) => {
+                                     const enginVal = e.target.value;
+                                     updateItem(item.id, 'engin', enginVal);
+                                     const price = ENGINS_PRICES[enginVal];
+                                     if (price !== undefined) {
+                                       updateItem(item.id, 'totalAmount', String(price));
+                                     }
+                                   }}
+                                   className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm outline-none transition-all cursor-pointer"
+                                 >
+                                   <option value="">Sélectionner</option>
+                                   {Object.keys(ENGINS_PRICES).map(name => (
+                                     <option key={name} value={name}>{name}</option>
+                                   ))}
+                                   <option value="Autre">Autre / Personnalisé</option>
+                                 </select>
+                              </div>
+                              <div className="space-y-2">
+                                 <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Motif</label>
+                                 <input 
+                                   value={item.motif}
+                                   onChange={(e) => updateItem(item.id, 'motif', e.target.value)}
+                                   className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm outline-none transition-all" 
+                                 />
+                              </div>
+                           </div>
+
+                           {/* Row 2: Total, Versé, Reste, Canal, Paiement */}
+                           <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+                              <div className="space-y-2">
+                                 <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Total *</label>
+                                 <input 
+                                   type="number"
+                                   required
+                                   value={item.totalAmount}
+                                   onChange={(e) => updateItem(item.id, 'totalAmount', e.target.value)}
+                                   className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm text-primary outline-none transition-all" 
+                                 />
+                              </div>
+                              <div className="space-y-2">
+                                 <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Versé *</label>
+                                 <input 
+                                   type="number"
+                                   required
+                                   value={item.paidAmount}
+                                   onChange={(e) => updateItem(item.id, 'paidAmount', e.target.value)}
+                                   className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm text-emerald-600 outline-none transition-all" 
+                                 />
+                              </div>
+                              <div className="space-y-2">
+                                 <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Reste à payer</label>
+                                 <div className="w-full px-4 py-2.5 rounded-xl bg-red-50 border border-red-100 font-black text-sm text-red-500 h-[46px] flex items-center">
+                                    {(Number(item.totalAmount || 0) - Number(item.paidAmount || 0)).toLocaleString()} F
+                                 </div>
+                              </div>
+                              <div className="space-y-2">
+                                 <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Canal</label>
+                                 <select 
+                                   value={item.canal}
+                                   onChange={(e) => updateItem(item.id, 'canal', e.target.value)}
+                                   className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] text-sm font-bold appearance-none outline-none transition-all cursor-pointer"
+                                 >
+                                    <option>Social</option>
+                                    <option>Direct</option>
+                                    <option>Referral</option>
+                                 </select>
+                              </div>
+                              <div className="flex gap-2">
+                                 <div className="flex-1 space-y-2">
+                                    <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Paiement</label>
+                                    <select 
+                                      value={item.modePaiement}
+                                      onChange={(e) => updateItem(item.id, 'modePaiement', e.target.value)}
+                                      className="w-full px-3 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] text-sm font-bold appearance-none outline-none transition-all cursor-pointer"
+                                    >
+                                       <option>Espèces</option>
+                                       <option>Wave</option>
+                                       <option>OM</option>
+                                       <option>Momo</option>
+                                       <option>Virement</option>
+                                       <option>Chèque</option>
+                                    </select>
+                                 </div>
+                                 {items.length > 1 && (
+                                    <button 
+                                      type="button" 
+                                      onClick={() => removeItem(item.id)}
+                                      className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all flex items-center justify-center self-end animate-pulse"
+                                    >
+                                       <Trash2 className="w-4 h-4" />
+                                    </button>
+                                 )}
+                              </div>
+                           </div>
+                        </div>
+                     ))}
+                  </div>
               </div>
 
               {/* Action Fields (shared) */}
