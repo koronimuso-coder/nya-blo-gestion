@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 
+
 export async function POST(req: Request) {
   try {
     const { message, context } = await req.json();

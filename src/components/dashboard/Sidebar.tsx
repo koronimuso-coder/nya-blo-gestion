@@ -42,12 +42,18 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const container = React.useRef(null);
 
   useGSAP(() => {
-    gsap.from(".nav-item", {
-      x: -30,
-      opacity: 0,
-      stagger: 0.1,
-      duration: 0.8,
-      ease: "power3.out"
+    const items = container.current
+      ? (container.current as HTMLElement).querySelectorAll(".nav-item")
+      : [];
+    if (items.length === 0) return;
+    gsap.set(items, { x: -30, autoAlpha: 0 });
+    gsap.to(items, {
+      x: 0,
+      autoAlpha: 1,
+      stagger: 0.08,
+      duration: 0.7,
+      ease: "power3.out",
+      delay: 0.1,
     });
   }, { scope: container });
 
@@ -92,7 +98,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
               className={`nav-item flex items-center justify-between px-5 py-4 rounded-2xl transition-all group ${
                 isActive 
                 ? "bg-[#D4AF37] text-[#2D1A12] shadow-dogon font-bold" 
-                : "text-[#FAF3E0]/70 hover:bg-white/5 hover:text-white"
+                : "text-[#E8DCC4] hover:bg-white/5 hover:text-white"
               }`}
             >
               <div className="flex items-center gap-4">

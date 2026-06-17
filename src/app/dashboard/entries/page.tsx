@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { 
   Search, 
   Target,
@@ -12,8 +12,14 @@ import {
   Edit3,
   Trash2,
   MoreVertical,
-  Eye,
-  FileText
+  FileText,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  ChevronLeft,
+  ChevronRight,
+  SlidersHorizontal,
+  X
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import EntryModal, { type EditableEntry } from "@/components/dashboard/EntryModal";
@@ -48,6 +54,32 @@ interface Entry {
   createdByEmail?: string;
 }
 
+type SortKey = "date" | "clientName" | "totalAmount" | "paidAmount" | "resteAVerser";
+type SortDir = "asc" | "desc";
+
+const PAGE_SIZE = 20;
+
+const StatusBadge = ({ status }: { status: string }) => {
+  const map: Record<string, string> = {
+    "Confirmé": "bg-emerald-50 text-emerald-700 border-emerald-100",
+    "En attente": "bg-amber-50 text-amber-700 border-amber-100",
+    "Incomplet": "bg-orange-50 text-orange-700 border-orange-100",
+  };
+  const cls = map[status] || "bg-blue-50 text-blue-700 border-blue-100";
+  return (
+    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${cls}`}>
+      {status || "Confirmé"}
+    </span>
+  );
+};
+
+const SortIcon = ({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) => {
+  if (col !== sortKey) return <ChevronsUpDown className="w-3 h-3 text-[#B89E7E] opacity-40" />;
+  return sortDir === "asc"
+    ? <ChevronUp className="w-3 h-3 text-[#D4AF37]" />
+    : <ChevronDown className="w-3 h-3 text-[#D4AF37]" />;
+};
+
 export default function EntriesPage() {
   const { profile } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -59,11 +91,31 @@ export default function EntriesPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [currency, setCurrency] = useState("FCFA");
 
+  // Advanced filters
+  const [filterStatus, setFilterStatus] = useState("Tous");
+  const [filterPayment, setFilterPayment] = useState("Tous");
+  const [filterCompany, setFilterCompany] = useState("Toutes");
+  const [companies, setCompanies] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Sort state
+  const [sortKey, setSortKey] = useState<SortKey>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "settings", "enterprise"), (docSnap) => {
-      if (docSnap.exists()) {
-        setCurrency(docSnap.data().currency || "FCFA");
-      }
+      if (docSnap.exists()) setCurrency(docSnap.data().currency || "FCFA");
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, "companies"), orderBy("name", "asc"));
+    const unsub = onSnapshot(q, (snap) => {
+      setCompanies(snap.docs.map(d => d.data().name as string));
     });
     return () => unsub();
   }, []);
@@ -92,7 +144,6 @@ export default function EntriesPage() {
     return () => unsubscribe();
   }, []);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = () => setActiveDropdown(null);
     if (activeDropdown) {
@@ -101,28 +152,97 @@ export default function EntriesPage() {
     }
   }, [activeDropdown]);
 
-  const filteredEntries = entries
-    .filter(e => {
-      if (profile?.role === "commerciale") {
-        return e.createdBy === profile?.uid;
-      }
+  // Unique payment modes
+  const paymentModes = useMemo(() => {
+    const modes = new Set(entries.map(e => e.modePaiement || "Espèces"));
+    return Array.from(modes);
+  }, [entries]);
+
+  // Filtered + sorted entries
+  const processedEntries = useMemo(() => {
+    let result = entries.filter(e => {
+      if (profile?.role === "commerciale") return e.createdBy === profile?.uid;
       return true;
-    })
-    .filter(e => 
-      e.clientName?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      e.companyId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      e.status?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      e.canal?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    });
+
+    // Search
+    if (searchTerm) {
+      const q = searchTerm.toLowerCase();
+      result = result.filter(e =>
+        e.clientName?.toLowerCase().includes(q) ||
+        e.companyId?.toLowerCase().includes(q) ||
+        e.status?.toLowerCase().includes(q) ||
+        e.canal?.toLowerCase().includes(q) ||
+        e.modePaiement?.toLowerCase().includes(q) ||
+        e.clientContact?.toLowerCase().includes(q)
+      );
+    }
+
+    // Status filter
+    if (filterStatus !== "Tous") {
+      result = result.filter(e => (e.status || "Confirmé") === filterStatus);
+    }
+
+    // Payment filter
+    if (filterPayment !== "Tous") {
+      result = result.filter(e => (e.modePaiement || "Espèces") === filterPayment);
+    }
+
+    // Company filter
+    if (filterCompany !== "Toutes") {
+      result = result.filter(e => e.companyId === filterCompany);
+    }
+
+    // Sort
+    result = [...result].sort((a, b) => {
+      let valA: any, valB: any;
+      if (sortKey === "date") {
+        valA = a.date || "";
+        valB = b.date || "";
+      } else if (sortKey === "clientName") {
+        valA = a.clientName?.toLowerCase() || "";
+        valB = b.clientName?.toLowerCase() || "";
+      } else {
+        valA = (a as any)[sortKey] || 0;
+        valB = (b as any)[sortKey] || 0;
+      }
+      if (valA < valB) return sortDir === "asc" ? -1 : 1;
+      if (valA > valB) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [entries, searchTerm, filterStatus, filterPayment, filterCompany, sortKey, sortDir, profile]);
+
+  const totalPages = Math.ceil(processedEntries.length / PAGE_SIZE);
+  const paginatedEntries = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return processedEntries.slice(start, start + PAGE_SIZE);
+  }, [processedEntries, currentPage]);
+
+  // Reset page on filter change
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, filterStatus, filterPayment, filterCompany, sortKey, sortDir]);
+
+  const totalVentes = useMemo(() => processedEntries.reduce((a, c) => a + c.totalAmount, 0), [processedEntries]);
+  const totalEncaisse = useMemo(() => processedEntries.reduce((a, c) => a + c.paidAmount, 0), [processedEntries]);
+  const totalReste = useMemo(() => processedEntries.reduce((a, c) => a + (c.resteAVerser || 0), 0), [processedEntries]);
 
   useGSAP(() => {
     if (!loading) {
       const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
       tl.from(".page-header", { y: -20, opacity: 0, duration: 0.8 });
       tl.from(".stats-bar", { y: 20, opacity: 0, duration: 0.8 }, "-=0.4");
-      tl.from(".table-row", { opacity: 0, y: 10, stagger: 0.05, duration: 0.4 });
     }
   }, { scope: container, dependencies: [loading] });
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
 
   const handleEdit = (entry: Entry) => {
     setEditEntry(entry as EditableEntry);
@@ -138,22 +258,12 @@ export default function EntriesPage() {
     const company = entry ? entry.companyId : "global";
     try {
       await deleteDoc(doc(db, "daily_entries", entryId));
-      
-      // Decrement user's entriesCount
       const creatorUid = entry?.createdBy;
       if (creatorUid) {
-        await updateDoc(doc(db, "users", creatorUid), {
-          entriesCount: increment(-1)
-        }).catch(() => {});
+        await updateDoc(doc(db, "users", creatorUid), { entriesCount: increment(-1) }).catch(() => {});
       }
-
-      await logAction(
-        profile?.uid,
-        profile?.email,
-        "sale_delete",
-        `Suppression de la saisie pour ${clientName} (${amount.toLocaleString()} ${currency}, filiale: ${company})`,
-        company
-      );
+      await logAction(profile?.uid, profile?.email, "sale_delete",
+        `Suppression de la saisie pour ${clientName} (${amount.toLocaleString()} ${currency}, filiale: ${company})`, company);
       toast.success("Saisie supprimée !");
     } catch (error) {
       console.error(error);
@@ -174,69 +284,47 @@ export default function EntriesPage() {
     try {
       const jsPDFModule = await import("jspdf");
       const jsPDF = jsPDFModule.default;
-      
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4"
-      });
-
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       const currencyStr = currency || "FCFA";
       const receiptRef = `REC-${entry.id.substring(0, 8).toUpperCase()}`;
 
-      // Border lines
-      doc.setDrawColor(212, 175, 55); // Gold
+      doc.setDrawColor(212, 175, 55);
       doc.setLineWidth(1.5);
       doc.rect(8, 8, 194, 281);
-      
-      doc.setDrawColor(92, 61, 46); // Deep Clay
+      doc.setDrawColor(92, 61, 46);
       doc.setLineWidth(0.5);
       doc.rect(10, 10, 190, 277);
-
-      // Header block
       doc.setFillColor(92, 61, 46);
       doc.rect(12, 12, 186, 36, "F");
-
       doc.setFillColor(212, 175, 55);
       doc.rect(12, 45, 186, 3, "F");
-
-      // Header Text
       doc.setTextColor(255, 255, 255);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(22);
       doc.text("NYA BLO GESTION", 20, 28);
-      
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(212, 175, 55);
       doc.text("SAGE ET CONSOLIDÉ • SYSTÈME DE COMMERCE TENANT", 20, 36);
-
-      // Receipt Title Block
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(255, 255, 255);
       doc.text("REÇU DE PAIEMENT", 130, 26);
-      
       doc.setFontSize(9);
       doc.text(`Réf : ${receiptRef}`, 130, 34);
       doc.setFont("helvetica", "normal");
       doc.text(`Date : ${entry.date ? new Date(entry.date).toLocaleDateString("fr-FR") : "--"}`, 130, 40);
-
       doc.setTextColor(45, 26, 18);
-
-      // Metadata cards
       doc.setFillColor(250, 243, 224);
       doc.rect(15, 56, 85, 34, "F");
       doc.setDrawColor(232, 220, 196);
       doc.rect(15, 56, 85, 34);
-      
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
       doc.text("ÉMETTEUR (FILIALE) :", 20, 63);
       doc.setFontSize(12);
       doc.setTextColor(92, 61, 46);
       doc.text(String(entry.companyId || "NYA BLO").toUpperCase(), 20, 71);
-      
       doc.setFontSize(8);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(100, 100, 100);
@@ -244,12 +332,9 @@ export default function EntriesPage() {
       doc.setFont("helvetica", "bold");
       doc.setTextColor(45, 26, 18);
       doc.text(entry.createdByName || entry.createdByEmail || "Agent Commercial", 20, 83);
-
-      // Client Card
       doc.setFillColor(250, 243, 224);
       doc.rect(110, 56, 85, 34, "F");
       doc.rect(110, 56, 85, 34);
-      
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
       doc.setTextColor(45, 26, 18);
@@ -257,19 +342,15 @@ export default function EntriesPage() {
       doc.setFontSize(12);
       doc.setTextColor(92, 61, 46);
       doc.text(String(entry.clientName || "Client inconnu").toUpperCase(), 115, 71);
-      
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(45, 26, 18);
       doc.text(`Contact : ${entry.clientContact || "Non renseigné"}`, 115, 79);
       doc.text(`Date de Saisie : ${new Date().toLocaleDateString("fr-FR")}`, 115, 84);
-
-      // Transaction section
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.setTextColor(92, 61, 46);
       doc.text("DÉTAIL DE LA TRANSACTION", 15, 105);
-      
       doc.setDrawColor(92, 61, 46);
       doc.setLineWidth(0.5);
       doc.line(15, 107, 195, 107);
@@ -289,42 +370,33 @@ export default function EntriesPage() {
         doc.setFontSize(9);
         doc.setTextColor(100, 100, 100);
         doc.text(d.label, 20, currentY);
-        
         doc.setFont("helvetica", "normal");
         doc.setTextColor(45, 26, 18);
         doc.text(String(d.val), 100, currentY);
-
         doc.setDrawColor(232, 220, 196);
         doc.setLineWidth(0.2);
         doc.line(15, currentY + 3, 195, currentY + 3);
         currentY += 10;
       });
 
-      // Financial calculations card
       currentY += 5;
+      const totalAmount = entry.totalAmount || 0;
+      const paidAmount = entry.paidAmount || 0;
+      const remains = entry.resteAVerser || 0;
       doc.setFillColor(250, 243, 224);
       doc.rect(110, currentY, 85, 40, "F");
       doc.setDrawColor(212, 175, 55);
       doc.rect(110, currentY, 85, 40);
-
-      const totalAmount = entry.totalAmount || 0;
-      const paidAmount = entry.paidAmount || 0;
-      const remains = entry.resteAVerser || 0;
-
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
       doc.setTextColor(45, 26, 18);
-      
       doc.text("Montant Total :", 115, currentY + 10);
       doc.text(`${totalAmount.toLocaleString()} ${currencyStr}`, 155, currentY + 10);
-      
       doc.setTextColor(5, 150, 105);
       doc.text("Montant Versé :", 115, currentY + 20);
       doc.text(`${paidAmount.toLocaleString()} ${currencyStr}`, 155, currentY + 20);
-
       doc.setDrawColor(212, 175, 55);
       doc.line(115, currentY + 26, 190, currentY + 26);
-
       if (remains > 0) {
         doc.setTextColor(220, 38, 38);
         doc.text("Reste à Verser :", 115, currentY + 33);
@@ -334,8 +406,6 @@ export default function EntriesPage() {
         doc.text("Statut Financier :", 115, currentY + 33);
         doc.text("SOLDÉ / RÉGLÉ", 155, currentY + 33);
       }
-
-      // Stamps and status banner
       const isPaid = remains <= 0;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
@@ -354,64 +424,53 @@ export default function EntriesPage() {
         doc.setTextColor(217, 119, 6);
         doc.text("SOLDE PARTIEL", 40, currentY + 18, { align: "center" });
       }
-
-      // Prochaine Action / Observations
       if (entry.prochaineAction || entry.observation) {
         currentY += 46;
         doc.setFont("helvetica", "bold");
         doc.setFontSize(9);
         doc.setTextColor(92, 61, 46);
         doc.text("OBSERVATIONS / ACTION DE SUIVI :", 15, currentY);
-        
         doc.setFont("helvetica", "normal");
         doc.setFontSize(8);
         doc.setTextColor(100, 100, 100);
-        const notes = entry.prochaineAction 
+        const notes = entry.prochaineAction
           ? `Action attendue: ${entry.prochaineAction}${entry.observation ? ` | Note: ${entry.observation}` : ""}`
           : entry.observation;
-        
         const splitNotes = doc.splitTextToSize(notes, 175);
         doc.text(splitNotes, 15, currentY + 5);
       }
-
-      // Wisdom Dogon Footer
       doc.setFont("helvetica", "italic");
       doc.setFontSize(8);
       doc.setTextColor(166, 96, 55);
-      doc.text(
-        '" La confiance est le ciment de nos greniers. Merci pour votre fidélité. "',
-        100, 255, { align: "center" }
-      );
-
-      // Signatures
+      doc.text('" La confiance est le ciment de nos greniers. Merci pour votre fidélité. "', 100, 255, { align: "center" });
       doc.setDrawColor(232, 220, 196);
       doc.line(30, 235, 80, 235);
       doc.line(130, 235, 180, 235);
-      
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       doc.setTextColor(100, 100, 100);
       doc.text("Signature Client", 55, 240, { align: "center" });
       doc.text("Cachet / Signature Agent", 155, 240, { align: "center" });
-
       const cleanName = entry.clientName ? entry.clientName.replace(/\s+/g, "_") : "Client";
       doc.save(`RECU_${receiptRef}_${cleanName}.pdf`);
       toast.success("Reçu de paiement téléchargé !");
-
-      await logAction(
-        profile?.uid,
-        profile?.email,
-        "receipt_download",
-        `Téléchargement du reçu de paiement pour ${entry.clientName} (Réf: ${receiptRef})`,
-        entry.companyId
-      ).catch(() => {});
-
+      await logAction(profile?.uid, profile?.email, "receipt_download",
+        `Téléchargement du reçu de paiement pour ${entry.clientName} (Réf: ${receiptRef})`, entry.companyId).catch(() => {});
     } catch (err) {
       console.error(err);
       toast.error("Erreur lors de la génération du reçu PDF");
     } finally {
       setGeneratingReceiptId(null);
     }
+  };
+
+  const hasActiveFilters = filterStatus !== "Tous" || filterPayment !== "Tous" || filterCompany !== "Toutes";
+
+  const resetFilters = () => {
+    setFilterStatus("Tous");
+    setFilterPayment("Tous");
+    setFilterCompany("Toutes");
+    setSearchTerm("");
   };
 
   if (loading) return (
@@ -442,12 +501,13 @@ export default function EntriesPage() {
         </div>
       </div>
 
+      {/* Stats bar */}
       <div className="stats-bar grid grid-cols-1 md:grid-cols-4 gap-6 relative z-10">
          {[
-            { label: "Saisies Totales", value: filteredEntries.length.toString(), icon: LayoutGrid, color: "text-[#5C3D2E]" },
-            { label: "Total Ventes", value: filteredEntries.reduce((acc, curr) => acc + Number(curr.totalAmount || 0), 0).toLocaleString() + " " + currency, icon: TrendingUp, color: "text-[#A66037]" },
-            { label: "Total Encaissé", value: filteredEntries.reduce((acc, curr) => acc + Number(curr.paidAmount || 0), 0).toLocaleString() + " " + currency, icon: Target, color: "text-[#D4AF37]" },
-            { label: "Total Reste", value: filteredEntries.reduce((acc, curr) => acc + Number(curr.resteAVerser || 0), 0).toLocaleString() + " " + currency, icon: AlertCircle, color: "text-red-500" },
+            { label: "Saisies Filtrées", value: processedEntries.length.toString(), icon: LayoutGrid, color: "text-[#5C3D2E]" },
+            { label: "Total Ventes", value: totalVentes.toLocaleString() + " " + currency, icon: TrendingUp, color: "text-[#A66037]" },
+            { label: "Total Encaissé", value: totalEncaisse.toLocaleString() + " " + currency, icon: Target, color: "text-[#D4AF37]" },
+            { label: "Total Reste", value: totalReste.toLocaleString() + " " + currency, icon: AlertCircle, color: "text-red-500" },
          ].map((stat, i) => (
             <div key={i} className="bg-white p-5 rounded-3xl shadow-premium border border-[#E8DCC4] flex items-center gap-4 hover:shadow-dogon hover:-translate-y-1 transition-all duration-300">
                <div className="w-12 h-12 bg-[#FAF3E0] rounded-2xl flex items-center justify-center text-[#5C3D2E] border border-[#E8DCC4]">
@@ -462,38 +522,117 @@ export default function EntriesPage() {
       </div>
 
       <div className="bg-white rounded-[40px] shadow-premium border border-[#E8DCC4] overflow-hidden relative z-10">
-        <div className="p-8 border-b border-[#E8DCC4]/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="relative flex-1 max-w-md group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#B89E7E] group-focus-within:text-[#D4AF37] transition-colors" />
-            <input 
-              type="text" 
-              placeholder="Rechercher par client, filiale ou statut..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] text-sm font-medium outline-none transition-all"
-            />
+        {/* Search + Filter bar */}
+        <div className="p-8 border-b border-[#E8DCC4]/30 space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="relative flex-1 max-w-md group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#B89E7E] group-focus-within:text-[#D4AF37] transition-colors" />
+              <input 
+                type="text" 
+                placeholder="Rechercher par client, filiale, statut ou mode..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] text-sm font-medium outline-none transition-all"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowFilters(v => !v)}
+                className={`flex items-center gap-2 px-4 py-3 rounded-2xl border font-bold text-sm transition-all cursor-pointer ${
+                  showFilters || hasActiveFilters
+                    ? "bg-[#5C3D2E] text-white border-[#5C3D2E]"
+                    : "bg-[#FAF3E0]/30 border-[#E8DCC4] text-[#5C3D2E] hover:bg-[#FAF3E0]"
+                }`}
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                Filtres
+                {hasActiveFilters && <span className="w-2 h-2 bg-[#D4AF37] rounded-full" />}
+              </button>
+              {hasActiveFilters && (
+                <button
+                  onClick={resetFilters}
+                  className="flex items-center gap-1 px-3 py-3 rounded-2xl border border-red-200 text-red-500 hover:bg-red-50 transition-all text-xs font-bold cursor-pointer"
+                >
+                  <X className="w-3 h-3" /> Réinitialiser
+                </button>
+              )}
+              <p className="text-sm font-bold text-[#B89E7E] whitespace-nowrap">{processedEntries.length} résultat(s)</p>
+            </div>
           </div>
-          <p className="text-sm font-bold text-[#B89E7E]">{filteredEntries.length} résultat(s)</p>
+
+          {/* Advanced filters panel */}
+          {showFilters && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-[#E8DCC4]/30">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest pl-1">Statut</label>
+                <select
+                  value={filterStatus}
+                  onChange={e => setFilterStatus(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] text-sm font-bold text-[#5C3D2E] outline-none focus:ring-2 focus:ring-[#D4AF37]/20 cursor-pointer"
+                >
+                  <option value="Tous">Tous les statuts</option>
+                  <option value="Confirmé">✅ Confirmé</option>
+                  <option value="En attente">⏳ En attente</option>
+                  <option value="Incomplet">⚠️ Incomplet</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest pl-1">Mode de paiement</label>
+                <select
+                  value={filterPayment}
+                  onChange={e => setFilterPayment(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] text-sm font-bold text-[#5C3D2E] outline-none focus:ring-2 focus:ring-[#D4AF37]/20 cursor-pointer"
+                >
+                  <option value="Tous">Tous les modes</option>
+                  {paymentModes.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest pl-1">Entreprise</label>
+                <select
+                  value={filterCompany}
+                  onChange={e => setFilterCompany(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] text-sm font-bold text-[#5C3D2E] outline-none focus:ring-2 focus:ring-[#D4AF37]/20 cursor-pointer"
+                >
+                  <option value="Toutes">Toutes les entreprises</option>
+                  {companies.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="bg-[#FAF3E0]/50 text-[#A66037]">
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em]">Date</th>
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em]">Client</th>
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em]">Entreprise</th>
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em]">Total</th>
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em]">Versé</th>
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em]">Reste</th>
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em]">Paiement</th>
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em]">Canal</th>
-                <th className="px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em]">Statut</th>
-                <th className="px-8 py-5"></th>
+                {([
+                  { label: "Date", key: "date" as SortKey },
+                  { label: "Client", key: "clientName" as SortKey },
+                  { label: "Entreprise", key: null },
+                  { label: "Total", key: "totalAmount" as SortKey },
+                  { label: "Versé", key: "paidAmount" as SortKey },
+                  { label: "Reste", key: "resteAVerser" as SortKey },
+                  { label: "Paiement", key: null },
+                  { label: "Canal", key: null },
+                  { label: "Statut", key: null },
+                  { label: "", key: null },
+                ]).map(({ label, key }, i) => (
+                  <th
+                    key={i}
+                    className={`px-8 py-5 text-[10px] font-bold uppercase tracking-[0.2em] ${key ? "cursor-pointer hover:text-[#5C3D2E] select-none" : ""}`}
+                    onClick={() => key && handleSort(key)}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      {label}
+                      {key && <SortIcon col={key} sortKey={sortKey} sortDir={sortDir} />}
+                    </div>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E8DCC4]/20">
-              {filteredEntries.map((entry) => (
+              {paginatedEntries.map((entry) => (
                 <tr key={entry.id} className="table-row hover:bg-[#FAF3E0]/30 transition-colors group">
                   <td className="px-8 py-6 font-bold text-[#5C3D2E] text-sm whitespace-nowrap">
                     {entry.date ? new Date(entry.date).toLocaleDateString('fr-FR') : "--"}
@@ -530,12 +669,7 @@ export default function EntriesPage() {
                      </span>
                   </td>
                   <td className="px-8 py-6">
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                       entry.status === 'Confirmé' ? 'bg-emerald-50 text-emerald-700' : 
-                       entry.status === 'En attente' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'
-                    }`}>
-                       {entry.status || 'Confirmé'}
-                    </span>
+                    <StatusBadge status={entry.status} />
                   </td>
                   <td className="px-8 py-6 text-right relative">
                     <button 
@@ -568,16 +702,61 @@ export default function EntriesPage() {
                   </td>
                 </tr>
               ))}
-              {filteredEntries.length === 0 && !loading && (
+              {paginatedEntries.length === 0 && !loading && (
                  <tr>
                     <td colSpan={10} className="px-8 py-20 text-center text-[#B89E7E] italic text-sm">
-                       {searchTerm ? `Aucun résultat trouvé pour "${searchTerm}".` : "Aucune saisie enregistrée. Cliquez sur 'Nouvelle Saisie Réelle' pour commencer."}
+                       {searchTerm || hasActiveFilters ? "Aucun résultat pour ces filtres. Réinitialisez les filtres." : "Aucune saisie enregistrée. Cliquez sur 'Nouvelle Saisie Réelle' pour commencer."}
                     </td>
                  </tr>
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="px-8 py-5 border-t border-[#E8DCC4]/30 flex items-center justify-between bg-[#FAF3E0]/20">
+            <p className="text-xs font-bold text-[#B89E7E]">
+              Page {currentPage} sur {totalPages} — {processedEntries.length} entrée(s)
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-2 rounded-xl border border-[#E8DCC4] text-[#5C3D2E] hover:bg-[#FAF3E0] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let page = i + 1;
+                if (totalPages > 5 && currentPage > 3) {
+                  page = currentPage - 2 + i;
+                }
+                if (page > totalPages) return null;
+                return (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`w-9 h-9 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      currentPage === page
+                        ? "bg-[#5C3D2E] text-white shadow-md"
+                        : "border border-[#E8DCC4] text-[#5C3D2E] hover:bg-[#FAF3E0]"
+                    }`}
+                  >
+                    {page}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="p-2 rounded-xl border border-[#E8DCC4] text-[#5C3D2E] hover:bg-[#FAF3E0] disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <EntryModal isOpen={isModalOpen} onClose={handleCloseModal} editEntry={editEntry} />

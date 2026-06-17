@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { 
   TrendingUp, 
+  TrendingDown,
   Target, 
   CreditCard, 
   AlertCircle,
@@ -17,7 +18,10 @@ import {
   Edit2,
   Check,
   X,
-  Sparkles
+  Sparkles,
+  Trophy,
+  Flame,
+  Star
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -34,7 +38,9 @@ import {
   Pie,
   Cell,
   BarChart,
-  Bar
+  Bar,
+  LineChart,
+  Line
 } from "recharts";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -59,6 +65,21 @@ interface DashboardEntry {
 
 const PIE_COLORS = ["#5C3D2E", "#A66037", "#D4AF37", "#059669", "#3B82F6", "#8B5E3C"];
 
+// Skeleton loader component
+const SkeletonCard = () => (
+  <div className="kpi-card bg-white p-6 rounded-[32px] border border-[#E8DCC4] relative overflow-hidden">
+    <div className="flex justify-between items-start mb-4">
+      <div className="w-12 h-12 rounded-2xl shimmer" />
+      <div className="w-12 h-3 rounded-full shimmer" />
+    </div>
+    <div className="space-y-2">
+      <div className="w-20 h-2 rounded-full shimmer" />
+      <div className="w-32 h-6 rounded-lg shimmer" />
+      <div className="w-24 h-2 rounded-full shimmer" />
+    </div>
+  </div>
+);
+
 export default function DashboardPage() {
   const { profile, loading } = useAuth();
 
@@ -73,6 +94,7 @@ export default function DashboardPage() {
   const [particles, setParticles] = useState<{ id: number; x: string; y: string; size: string; delay: string; duration: string; scale: number }[]>([]);
   const [activeTab, setActiveTab] = useState("overview");
   const [users, setUsers] = useState<any[]>([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
   
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -98,8 +120,10 @@ export default function DashboardPage() {
         } as DashboardEntry;
       });
       setEntries(allDocs);
+      setDataLoaded(true);
     }, (error) => {
       console.error("Dashboard Real-time Error:", error);
+      setDataLoaded(true);
     });
 
     return () => unsubscribe();
@@ -140,13 +164,11 @@ export default function DashboardPage() {
     return () => unsubscribe();
   }, []);
 
-  // currentMonthSales, progressPercent, celebration and goal update computed below
-
   // 4. Filter entries reactively
   const filteredEntries = useMemo(() => {
     let result = entries;
 
-    // Row-level role-based filtering (commerciale only sees their own sales)
+    // Row-level role-based filtering
     if (profile?.role === "commerciale") {
       result = result.filter(e => (e as any).createdBy === profile.uid);
     }
@@ -171,22 +193,51 @@ export default function DashboardPage() {
       } else if (selectedPeriod === "90 derniers jours") {
         return dateVal >= startOf90;
       }
-      return true; // Toutes les données
+      return true;
     });
 
     return result;
   }, [entries, selectedCompany, selectedPeriod, profile]);
 
-  // Calculate current month's sales
+  // --- Previous period entries for trend calculation ---
+  const prevPeriodEntries = useMemo(() => {
+    let result = entries;
+    if (profile?.role === "commerciale") {
+      result = result.filter(e => (e as any).createdBy === profile.uid);
+    }
+    if (selectedCompany !== "Toutes les entreprises") {
+      result = result.filter(e => e.companyId === selectedCompany);
+    }
+
+    const now = new Date();
+    const startOf30 = new Date(); startOf30.setDate(now.getDate() - 30);
+    const startOf60 = new Date(); startOf60.setDate(now.getDate() - 60);
+    const startOf90 = new Date(); startOf90.setDate(now.getDate() - 90);
+    const startOf180 = new Date(); startOf180.setDate(now.getDate() - 180);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+    return result.filter(e => {
+      const dateVal = e.date ? new Date(e.date) : (e.createdAt ? new Date(e.createdAt) : null);
+      if (!dateVal) return false;
+      if (selectedPeriod === "Mois en cours") {
+        return dateVal >= startOfPrevMonth && dateVal < startOfMonth;
+      } else if (selectedPeriod === "30 derniers jours") {
+        return dateVal >= startOf60 && dateVal < startOf30;
+      } else if (selectedPeriod === "90 derniers jours") {
+        return dateVal >= startOf180 && dateVal < startOf90;
+      }
+      return false;
+    });
+  }, [entries, selectedCompany, selectedPeriod, profile]);
+
+  // Current month sales
   const currentMonthSales = useMemo(() => {
     const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
-    
     let total = 0;
     filteredEntries.forEach(entry => {
       const entryDate = entry.date ? new Date(entry.date) : (entry.createdAt ? new Date(entry.createdAt) : null);
-      if (entryDate && entryDate.getFullYear() === currentYear && entryDate.getMonth() === currentMonth) {
+      if (entryDate && entryDate.getFullYear() === now.getFullYear() && entryDate.getMonth() === now.getMonth()) {
         total += entry.totalAmount;
       }
     });
@@ -198,25 +249,24 @@ export default function DashboardPage() {
     return Math.min(Math.round((currentMonthSales / enterprise.salesTarget) * 100), 100);
   }, [currentMonthSales, enterprise.salesTarget]);
 
-  // Célébration de l'objectif de vente (Particules dorées)
+  // Celebration
   useEffect(() => {
     if (enterprise.salesTarget > 0 && currentMonthSales >= enterprise.salesTarget) {
       const newParticles = Array.from({ length: 45 }).map((_, i) => {
         const angle = Math.random() * Math.PI * 2;
         const distance = 50 + Math.random() * 200;
-        const x = `${Math.cos(angle) * distance}px`;
-        const y = `${Math.sin(angle) * distance}px`;
-        const size = `${4 + Math.random() * 8}px`;
-        const delay = `${Math.random() * 0.5}s`;
-        const duration = `${1.5 + Math.random() * 1.5}s`;
-        const scale = 0.5 + Math.random() * 1.5;
-        return { id: i, x, y, size, delay, duration, scale };
+        return {
+          id: i,
+          x: `${Math.cos(angle) * distance}px`,
+          y: `${Math.sin(angle) * distance}px`,
+          size: `${4 + Math.random() * 8}px`,
+          delay: `${Math.random() * 0.5}s`,
+          duration: `${1.5 + Math.random() * 1.5}s`,
+          scale: 0.5 + Math.random() * 1.5
+        };
       });
       setParticles(newParticles);
-      
-      const timer = setTimeout(() => {
-        setParticles([]);
-      }, 4500);
+      const timer = setTimeout(() => setParticles([]), 4500);
       return () => clearTimeout(timer);
     }
   }, [currentMonthSales, enterprise.salesTarget]);
@@ -224,14 +274,9 @@ export default function DashboardPage() {
   const handleUpdateGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     const val = Number(newGoalInput);
-    if (isNaN(val) || val <= 0) {
-      toast.error("Veuillez entrer un montant valide");
-      return;
-    }
+    if (isNaN(val) || val <= 0) { toast.error("Veuillez entrer un montant valide"); return; }
     try {
-      await updateDoc(doc(db, "settings", "enterprise"), {
-        salesTarget: val
-      });
+      await updateDoc(doc(db, "settings", "enterprise"), { salesTarget: val });
       setIsEditingGoal(false);
       toast.success("Objectif de vente mis à jour !");
     } catch (err) {
@@ -240,110 +285,133 @@ export default function DashboardPage() {
     }
   };
 
-  // 5. Compute stats from filtered entries
+  // 5. Compute stats
   const stats = useMemo(() => {
-    let t = 0;
-    let p = 0;
-    filteredEntries.forEach(d => {
-      t += d.totalAmount;
-      p += d.paidAmount;
-    });
+    let t = 0, p = 0;
+    filteredEntries.forEach(d => { t += d.totalAmount; p += d.paidAmount; });
     return {
-      total: t.toLocaleString(),
-      paid: p.toLocaleString(),
-      pending: (t - p).toLocaleString(),
-      conversion: t > 0 ? Math.round((p / t) * 100) + "%" : "0%",
+      total: t, totalStr: t.toLocaleString(),
+      paid: p, paidStr: p.toLocaleString(),
+      pending: t - p, pendingStr: (t - p).toLocaleString(),
+      conversion: t > 0 ? Math.round((p / t) * 100) : 0,
       count: filteredEntries.length
     };
   }, [filteredEntries]);
 
-  // 5b. Compute average basket size
+  // Previous period stats for trend
+  const prevStats = useMemo(() => {
+    let t = 0, p = 0;
+    prevPeriodEntries.forEach(d => { t += d.totalAmount; p += d.paidAmount; });
+    return { total: t, paid: p, count: prevPeriodEntries.length };
+  }, [prevPeriodEntries]);
+
+  const trendPct = (curr: number, prev: number) => {
+    if (prev === 0) return curr > 0 ? 100 : 0;
+    return Math.round(((curr - prev) / prev) * 100);
+  };
+
+  // Average basket
   const avgBasket = useMemo(() => {
     let t = 0;
-    filteredEntries.forEach(d => {
-      t += d.totalAmount;
-    });
+    filteredEntries.forEach(d => { t += d.totalAmount; });
     return filteredEntries.length > 0 ? Math.round(t / filteredEntries.length) : 0;
   }, [filteredEntries]);
+  const prevAvgBasket = useMemo(() => {
+    let t = 0;
+    prevPeriodEntries.forEach(d => { t += d.totalAmount; });
+    return prevPeriodEntries.length > 0 ? Math.round(t / prevPeriodEntries.length) : 0;
+  }, [prevPeriodEntries]);
 
-  // 5c. Compute collaborator stats dynamically
+  // Best day
+  const bestDay = useMemo(() => {
+    const dayMap: Record<string, number> = {};
+    filteredEntries.forEach(e => {
+      const d = e.date ? e.date.substring(0, 10) : null;
+      if (d) dayMap[d] = (dayMap[d] || 0) + e.totalAmount;
+    });
+    const entries2 = Object.entries(dayMap).sort((a, b) => b[1] - a[1]);
+    if (entries2.length === 0) return null;
+    const [date, amount] = entries2[0];
+    return { date: new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }), amount };
+  }, [filteredEntries]);
+
+  // Agent performance
   const agentPerformance = useMemo(() => {
     const perfMap: Record<string, { id: string; name: string; email: string; sales: number; paid: number; pending: number; count: number }> = {};
-    
     users.forEach(u => {
-      perfMap[u.id] = {
-        id: u.id,
-        name: u.displayName || "Agent",
-        email: u.email || "",
-        sales: 0,
-        paid: 0,
-        pending: 0,
-        count: 0
-      };
+      perfMap[u.id] = { id: u.id, name: u.displayName || "Agent", email: u.email || "", sales: 0, paid: 0, pending: 0, count: 0 };
     });
-
     filteredEntries.forEach(e => {
       const creatorId = e.createdBy;
       if (!creatorId) return;
-      
       if (!perfMap[creatorId]) {
-        perfMap[creatorId] = {
-          id: creatorId,
-          name: e.createdByName || "Agent inconnu",
-          email: e.createdByEmail || "",
-          sales: 0,
-          paid: 0,
-          pending: 0,
-          count: 0
-        };
+        perfMap[creatorId] = { id: creatorId, name: e.createdByName || "Agent inconnu", email: e.createdByEmail || "", sales: 0, paid: 0, pending: 0, count: 0 };
       }
-
       perfMap[creatorId].sales += e.totalAmount;
       perfMap[creatorId].paid += e.paidAmount;
       perfMap[creatorId].pending += (e.totalAmount - e.paidAmount);
       perfMap[creatorId].count += 1;
     });
-
-    return Object.values(perfMap)
-      .sort((a, b) => b.sales - a.sales);
+    return Object.values(perfMap).sort((a, b) => b.sales - a.sales);
   }, [filteredEntries, users]);
 
-  // 6. Compute AreaChart data (latest 10 entries)
-  const chartData = useMemo(() => {
-    return filteredEntries.slice(0, 10).reverse().map(e => ({
-      name: e.clientName?.substring(0, 12) || "Client",
-      total: e.totalAmount,
-      paid: e.paidAmount,
-      reste: e.totalAmount - e.paidAmount,
-    }));
-  }, [filteredEntries]);
+  // Weekly chart data (last 8 weeks)
+  const weeklyChartData = useMemo(() => {
+    const weeks: Record<string, { label: string; total: number; paid: number; reste: number; weekStart: Date }> = {};
+    const now = new Date();
 
-  // 7. Compute PieChart data (paid amount grouped by payment mode)
+    for (let w = 7; w >= 0; w--) {
+      const weekStart = new Date(now);
+      weekStart.setDate(now.getDate() - w * 7 - now.getDay());
+      weekStart.setHours(0, 0, 0, 0);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      const key = weekStart.toISOString().substring(0, 10);
+      const label = `${weekStart.getDate()}/${weekStart.getMonth() + 1}`;
+      weeks[key] = { label, total: 0, paid: 0, reste: 0, weekStart };
+    }
+
+    entries.forEach(e => {
+      const dateVal = e.date ? new Date(e.date) : (e.createdAt ? new Date(e.createdAt) : null);
+      if (!dateVal) return;
+      if (selectedCompany !== "Toutes les entreprises" && e.companyId !== selectedCompany) return;
+
+      for (const [key, week] of Object.entries(weeks)) {
+        const weekEnd = new Date(week.weekStart);
+        weekEnd.setDate(week.weekStart.getDate() + 7);
+        if (dateVal >= week.weekStart && dateVal < weekEnd) {
+          week.total += e.totalAmount;
+          week.paid += e.paidAmount;
+          week.reste += (e.totalAmount - e.paidAmount);
+          break;
+        }
+      }
+    });
+
+    return Object.values(weeks).map(w => ({ name: w.label, total: w.total, paid: w.paid, reste: w.reste }));
+  }, [entries, selectedCompany]);
+
+  // Pie chart data
   const pieData = useMemo(() => {
     const groups: Record<string, number> = {};
     filteredEntries.forEach(e => {
       const mode = e.modePaiement || "Espèces";
       groups[mode] = (groups[mode] || 0) + e.paidAmount;
     });
-    return Object.entries(groups)
-      .map(([name, value]) => ({ name, value }))
-      .filter(item => item.value > 0);
+    return Object.entries(groups).map(([name, value]) => ({ name, value })).filter(item => item.value > 0);
   }, [filteredEntries]);
 
-  // 8. Recent 5 operations from filtered entries
-  const recentEntries = useMemo(() => {
-    return filteredEntries.slice(0, 5);
-  }, [filteredEntries]);
+  const recentEntries = useMemo(() => filteredEntries.slice(0, 5), [filteredEntries]);
 
   useGSAP(() => {
-    if (!loading && profile) {
+    if (!loading && profile && dataLoaded) {
       const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
       tl.from(".page-header", { y: -30, opacity: 0, duration: 1 });
       tl.from(".filter-bar", { y: 20, opacity: 0, duration: 0.8 }, "-=0.6");
       tl.from(".kpi-card", { scale: 0.8, opacity: 0, stagger: 0.08, duration: 0.7 }, "-=0.5");
       tl.from(".chart-box", { y: 40, opacity: 0, stagger: 0.15, duration: 0.9 }, "-=0.4");
     }
-  }, { scope: container, dependencies: [loading] });
+  }, { scope: container, dependencies: [loading, dataLoaded] });
 
   if (loading || !profile) {
     return (
@@ -353,6 +421,70 @@ export default function DashboardPage() {
       </div>
     );
   }
+
+  const kpiData = [
+    {
+      title: "Total Ventes",
+      value: stats.totalStr,
+      trend: trendPct(stats.total, prevStats.total),
+      icon: Target,
+      subtitle: "Chiffre d'affaires global",
+      currency: enterprise.currency,
+      showCurrency: true,
+      color: "#5C3D2E"
+    },
+    {
+      title: "Encaissements",
+      value: stats.paidStr,
+      trend: trendPct(stats.paid, prevStats.paid),
+      icon: CreditCard,
+      subtitle: "Fonds perçus",
+      currency: enterprise.currency,
+      showCurrency: true,
+      color: "#059669"
+    },
+    {
+      title: "En Attente",
+      value: stats.pendingStr,
+      trend: -trendPct(stats.pending, prevStats.total - prevStats.paid),
+      icon: AlertCircle,
+      subtitle: "Montant à percevoir",
+      currency: enterprise.currency,
+      showCurrency: true,
+      color: "#DC2626",
+      invertTrend: true
+    },
+    {
+      title: "Panier Moyen",
+      value: avgBasket.toLocaleString(),
+      trend: trendPct(avgBasket, prevAvgBasket),
+      icon: Sparkles,
+      subtitle: "Moyenne par transaction",
+      currency: enterprise.currency,
+      showCurrency: true,
+      color: "#D4AF37"
+    },
+    {
+      title: "Taux Conversion",
+      value: `${stats.conversion}%`,
+      trend: trendPct(stats.conversion, prevStats.total > 0 ? Math.round((prevStats.paid / prevStats.total) * 100) : 0),
+      icon: TrendingUp,
+      subtitle: "Encaissé / Total",
+      currency: enterprise.currency,
+      showCurrency: false,
+      color: "#3B82F6"
+    },
+    {
+      title: "Opérations",
+      value: stats.count.toString(),
+      trend: trendPct(stats.count, prevStats.count),
+      icon: Activity,
+      subtitle: "Saisies enregistrées",
+      currency: enterprise.currency,
+      showCurrency: false,
+      color: "#A66037"
+    },
+  ];
 
   return (
     <div ref={container} className="space-y-8 pb-10 relative">
@@ -386,7 +518,13 @@ export default function DashboardPage() {
           </h1>
           <p className="text-[#B89E7E] mt-1">Vue globale des activités de {enterprise.name} en temps réel.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {bestDay && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 px-4 py-2.5 rounded-2xl">
+              <Flame className="w-4 h-4 text-amber-500" />
+              <span className="text-sm font-bold text-amber-700">Meilleure journée : {bestDay.date} — {bestDay.amount.toLocaleString()} {enterprise.currency}</span>
+            </div>
+          )}
           <div className="flex items-center gap-2 bg-white px-4 py-2.5 rounded-2xl shadow-premium border border-[#E8DCC4]">
              <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
              <span className="text-sm font-bold text-primary">Temps Réel</span>
@@ -426,14 +564,27 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
-        <KpiCard title="Total Ventes" value={stats.total} trend="Live" isPositive={true} icon={Target} subtitle="Chiffre d'affaires global" currency={enterprise.currency} />
-        <KpiCard title="Encaissements" value={stats.paid} trend="Live" isPositive={true} icon={CreditCard} subtitle="Fonds perçus" currency={enterprise.currency} />
-        <KpiCard title="En Attente" value={stats.pending} trend="Recouvrement" isPositive={false} icon={AlertCircle} subtitle="Montant à percevoir" currency={enterprise.currency} />
-        <KpiCard title="Panier Moyen" value={avgBasket.toLocaleString()} trend="Valeur" isPositive={true} icon={Sparkles} subtitle="Moyenne par transaction" currency={enterprise.currency} />
-        <KpiCard title="Taux Conversion" value={stats.conversion} trend={stats.conversion} isPositive={true} icon={TrendingUp} subtitle="Encaissé / Total" showCurrency={false} />
-        <KpiCard title="Opérations" value={stats.count.toString()} trend="Total" isPositive={true} icon={Activity} subtitle="Saisies enregistrées" showCurrency={false} />
-      </div>
+      {!dataLoaded ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
+          {[...Array(6)].map((_, i) => <SkeletonCard key={i} />)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
+          {kpiData.map((kpi, i) => (
+            <KpiCard
+              key={i}
+              title={kpi.title}
+              value={kpi.value}
+              trend={kpi.trend}
+              icon={kpi.icon}
+              subtitle={kpi.subtitle}
+              currency={kpi.currency}
+              showCurrency={kpi.showCurrency}
+              accentColor={kpi.color}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Tab Switcher */}
       <div className="flex gap-4 border-b border-[#E8DCC4] pb-px">
@@ -461,16 +612,35 @@ export default function DashboardPage() {
 
       {activeTab === "overview" ? (
         <>
-          {/* Charts & Target section */}
+          {/* Weekly trend chart + Target */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             
-            {/* Flux de Trésorerie AreaChart */}
+            {/* Flux Hebdomadaire */}
             <div className="chart-box lg:col-span-2 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4]">
-               <h3 className="font-bold text-xl text-primary font-dogon mb-8">Flux de Trésorerie</h3>
-               <div className="h-[350px] w-full">
-                  {chartData.length > 0 ? (
+               <div className="flex items-center justify-between mb-6">
+                 <div>
+                   <h3 className="font-bold text-xl text-primary font-dogon">Flux Hebdomadaire</h3>
+                   <p className="text-xs text-[#B89E7E] mt-1">Évolution des ventes sur les 8 dernières semaines</p>
+                 </div>
+                 <div className="flex items-center gap-2 bg-[#FAF3E0]/50 px-3 py-1.5 rounded-xl border border-[#E8DCC4]">
+                   <TrendingUp className="w-3 h-3 text-[#D4AF37]" />
+                   <span className="text-[10px] font-bold text-[#A66037] uppercase tracking-wider">8 semaines</span>
+                 </div>
+               </div>
+               <div className="h-[320px] w-full">
+                  {weeklyChartData.some(w => w.total > 0) ? (
                   <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={chartData}>
+                      <AreaChart data={weeklyChartData}>
+                         <defs>
+                           <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1">
+                             <stop offset="5%" stopColor="#5C3D2E" stopOpacity={0.25}/>
+                             <stop offset="95%" stopColor="#5C3D2E" stopOpacity={0}/>
+                           </linearGradient>
+                           <linearGradient id="gradPaid" x1="0" y1="0" x2="0" y2="1">
+                             <stop offset="5%" stopColor="#059669" stopOpacity={0.2}/>
+                             <stop offset="95%" stopColor="#059669" stopOpacity={0}/>
+                           </linearGradient>
+                         </defs>
                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E8DCC460" />
                          <XAxis dataKey="name" axisLine={false} tickLine={false} fontSize={11} />
                          <YAxis axisLine={false} tickLine={false} fontSize={11} tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v} />
@@ -479,9 +649,9 @@ export default function DashboardPage() {
                            contentStyle={{ borderRadius: '16px', border: '1px solid #E8DCC4', fontWeight: 'bold' }}
                          />
                          <Legend />
-                         <Area type="monotone" dataKey="total" name="Total" stroke="#5C3D2E" strokeWidth={3} fill="#5C3D2E15" />
-                         <Area type="monotone" dataKey="paid" name="Encaissé" stroke="#059669" strokeWidth={2} fill="#05966910" />
-                         <Area type="monotone" dataKey="reste" name="Reste" stroke="#DC2626" strokeWidth={2} fill="#DC262610" strokeDasharray="5 5" />
+                         <Area type="monotone" dataKey="total" name="Total" stroke="#5C3D2E" strokeWidth={3} fill="url(#gradTotal)" />
+                         <Area type="monotone" dataKey="paid" name="Encaissé" stroke="#059669" strokeWidth={2} fill="url(#gradPaid)" />
+                         <Area type="monotone" dataKey="reste" name="Reste" stroke="#DC2626" strokeWidth={2} fill="none" strokeDasharray="5 5" />
                       </AreaChart>
                   </ResponsiveContainer>
                   ) : (
@@ -514,7 +684,6 @@ export default function DashboardPage() {
                  )}
                </div>
 
-               {/* Editing Form Inline */}
                {isEditingGoal ? (
                  <form onSubmit={handleUpdateGoal} className="py-6 space-y-4 relative z-10">
                     <div className="space-y-1">
@@ -528,17 +697,10 @@ export default function DashboardPage() {
                        />
                     </div>
                     <div className="flex gap-2">
-                       <button 
-                         type="submit"
-                         className="flex-1 py-2.5 rounded-xl bg-[#5C3D2E] text-white font-bold text-xs uppercase hover:bg-[#A66037] transition-all flex items-center justify-center gap-1 cursor-pointer"
-                       >
+                       <button type="submit" className="flex-1 py-2.5 rounded-xl bg-[#5C3D2E] text-white font-bold text-xs uppercase hover:bg-[#A66037] transition-all flex items-center justify-center gap-1 cursor-pointer">
                           <Check className="w-3.5 h-3.5" /> Confirmer
                        </button>
-                       <button 
-                         type="button"
-                         onClick={() => setIsEditingGoal(false)}
-                         className="px-3 py-2.5 rounded-xl border border-[#E8DCC4] text-[#A66037] hover:bg-[#FAF3E0] transition-all cursor-pointer"
-                       >
+                       <button type="button" onClick={() => setIsEditingGoal(false)} className="px-3 py-2.5 rounded-xl border border-[#E8DCC4] text-[#A66037] hover:bg-[#FAF3E0] transition-all cursor-pointer">
                           <X className="w-3.5 h-3.5" />
                        </button>
                     </div>
@@ -546,21 +708,8 @@ export default function DashboardPage() {
                ) : (
                  <div className="flex flex-col items-center py-6 relative z-10">
                     <div className="relative flex items-center justify-center">
-                       <svg
-                         height={110}
-                         width={110}
-                         className="transform -rotate-90 drop-shadow-md"
-                       >
-                         {/* Track Ring */}
-                         <circle
-                           stroke="#FAF3E0"
-                           fill="transparent"
-                           strokeWidth={8}
-                           r={43}
-                           cx={55}
-                           cy={55}
-                         />
-                         {/* Progress Ring */}
+                       <svg height={110} width={110} className="transform -rotate-90 drop-shadow-md">
+                         <circle stroke="#FAF3E0" fill="transparent" strokeWidth={8} r={43} cx={55} cy={55} />
                          <circle
                            stroke={progressPercent >= 100 ? "#D4AF37" : "#A66037"}
                            fill="transparent"
@@ -568,13 +717,10 @@ export default function DashboardPage() {
                            strokeDasharray={`${2 * Math.PI * 43} ${2 * Math.PI * 43}`}
                            style={{ strokeDashoffset: (2 * Math.PI * 43) - (progressPercent / 100) * (2 * Math.PI * 43) }}
                            strokeLinecap="round"
-                           r={43}
-                           cx={55}
-                           cy={55}
+                           r={43} cx={55} cy={55}
                            className="transition-all duration-1000 ease-out"
                          />
                        </svg>
-                       {/* Center Text */}
                        <div className="absolute flex flex-col items-center">
                           <span className="text-2xl font-bold font-dogon text-primary leading-none">{progressPercent}%</span>
                           <span className="text-[9px] text-[#B89E7E] font-bold uppercase tracking-wider mt-1">Atteint</span>
@@ -601,9 +747,9 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Recent Operations, PieChart & Urgent Collections Reminders */}
+          {/* Recent Operations, PieChart & Urgent Collections */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-             {/* Left Side: Recent Operations */}
+             {/* Recent Operations */}
              <div className="chart-box lg:col-span-2 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] flex flex-col justify-between">
                <div>
                  <div className="flex items-center justify-between mb-8">
@@ -635,7 +781,7 @@ export default function DashboardPage() {
                </div>
              </div>
 
-             {/* Middle: Répartition par mode de paiement PieChart */}
+             {/* Modes de Paiement PieChart */}
              <div className="chart-box lg:col-span-1 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] flex flex-col justify-between">
                 <div>
                   <h3 className="font-bold text-xl text-primary font-dogon mb-2">Modes de Paiement</h3>
@@ -645,15 +791,7 @@ export default function DashboardPage() {
                    {pieData.length > 0 ? (
                      <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
-                          <Pie
-                            data={pieData}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={45}
-                            outerRadius={65}
-                            paddingAngle={4}
-                            dataKey="value"
-                          >
+                          <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={4} dataKey="value">
                             {pieData.map((entry, index) => (
                               <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                             ))}
@@ -665,9 +803,7 @@ export default function DashboardPage() {
                         </PieChart>
                      </ResponsiveContainer>
                    ) : (
-                     <div className="text-center text-[#B89E7E] italic text-xs">
-                       Aucun encaissement sur cette période.
-                     </div>
+                     <div className="text-center text-[#B89E7E] italic text-xs">Aucun encaissement sur cette période.</div>
                    )}
                 </div>
                 {pieData.length > 0 && (
@@ -682,7 +818,7 @@ export default function DashboardPage() {
                 )}
              </div>
 
-             {/* Right Side: Relances Prioritaires */}
+             {/* Relances Prioritaires */}
              <div className="chart-box lg:col-span-1 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] flex flex-col justify-between">
                <div>
                  <div className="flex items-center gap-2 mb-2">
@@ -697,7 +833,6 @@ export default function DashboardPage() {
                        .sort((a, b) => b.resteAVerser - a.resteAVerser)
                        .slice(0, 3)
                        .map((entry) => {
-                          // Generate WhatsApp reminder link
                           const cleanPhone = entry.clientContact?.replace(/[^0-9]/g, "") || "";
                           const waMsg = encodeURIComponent(`Bonjour ${entry.clientName}, nous vous contactons concernant votre règlement en attente pour un montant de ${entry.resteAVerser.toLocaleString()} ${enterprise.currency}. Merci de nous recontacter pour régulariser votre situation.`);
                           const waLink = `https://wa.me/${cleanPhone}?text=${waMsg}`;
@@ -733,9 +868,9 @@ export default function DashboardPage() {
           </div>
         </>
       ) : (
-        /* Performances Collaborateurs View */
+        /* Performances Collaborateurs */
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-           {/* Horizontal Bar Chart */}
+           {/* Bar Chart */}
            <div className="chart-box lg:col-span-1 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4]">
               <h3 className="font-bold text-xl text-primary font-dogon mb-2">Performances Comparées</h3>
               <p className="text-xs text-[#B89E7E] mb-8">Classement graphique des ventes et encaissements par agent commercial.</p>
@@ -855,31 +990,41 @@ export default function DashboardPage() {
 interface KpiCardProps {
   title: string;
   value: string;
-  trend: string;
-  isPositive: boolean;
+  trend: number;
   icon: React.ElementType;
   subtitle: string;
   showCurrency?: boolean;
   currency?: string;
+  accentColor?: string;
 }
 
-const KpiCard = ({ title, value, trend, isPositive, icon: Icon, subtitle, showCurrency = true, currency = "FCFA" }: KpiCardProps) => (
-  <div className="kpi-card bg-white p-6 rounded-[32px] shadow-premium border border-[#E8DCC4] relative overflow-hidden group">
-    <div className="absolute top-0 right-0 w-24 h-24 bg-[#5C3D2E]/5 rounded-bl-[80px] -mr-6 -mt-6 group-hover:bg-[#5C3D2E]/10 transition-all duration-500" />
-    <div className="relative z-10">
-      <div className="flex justify-between items-start mb-4">
-        <div className="bg-[#5C3D2E]/5 p-3 rounded-2xl text-[#5C3D2E] group-hover:bg-[#5C3D2E] group-hover:text-white transition-all duration-300">
-          <Icon className="w-6 h-6" />
+const KpiCard = ({ title, value, trend, icon: Icon, subtitle, showCurrency = true, currency = "FCFA", accentColor = "#5C3D2E" }: KpiCardProps) => {
+  const isPositive = trend >= 0;
+  const TrendIcon = isPositive ? TrendingUp : TrendingDown;
+  const trendColor = isPositive ? "text-emerald-600" : "text-red-500";
+  const trendBg = isPositive ? "bg-emerald-50" : "bg-red-50";
+
+  return (
+    <div className="kpi-card bg-white p-6 rounded-[32px] shadow-premium border border-[#E8DCC4] relative overflow-hidden group">
+      <div className="absolute top-0 right-0 w-24 h-24 rounded-bl-[80px] -mr-6 -mt-6 transition-all duration-500"
+           style={{ backgroundColor: `${accentColor}08` }} />
+      <div className="relative z-10">
+        <div className="flex justify-between items-start mb-4">
+          <div className="p-3 rounded-2xl transition-all duration-300 group-hover:scale-110"
+               style={{ backgroundColor: `${accentColor}12`, color: accentColor }}>
+            <Icon className="w-6 h-6" />
+          </div>
+          <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold ${trendBg} ${trendColor}`}>
+            <TrendIcon className="w-3 h-3" />
+            <span>{Math.abs(trend)}%</span>
+          </div>
         </div>
-        <div className={`text-[10px] font-bold tracking-[0.2em] uppercase ${isPositive ? 'text-[#D4AF37]' : 'text-orange-600'}`}>
-          {trend}
+        <div>
+          <p className="text-[#B89E7E] text-[10px] font-bold uppercase tracking-widest mb-1">{title}</p>
+          <h3 className="text-xl font-bold text-primary font-dogon mb-1">{value}{showCurrency ? ` ${currency}` : ""}</h3>
+          <p className="text-[10px] text-[#A66037] font-medium">{subtitle}</p>
         </div>
-      </div>
-      <div>
-        <p className="text-[#B89E7E] text-[10px] font-bold uppercase tracking-widest mb-1">{title}</p>
-        <h3 className="text-xl font-bold text-primary font-dogon mb-1">{value}{showCurrency ? ` ${currency}` : ""}</h3>
-        <p className="text-[10px] text-[#A66037] font-medium">{subtitle}</p>
       </div>
     </div>
-  </div>
-);
+  );
+};

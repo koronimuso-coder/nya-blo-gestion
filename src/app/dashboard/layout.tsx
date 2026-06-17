@@ -5,9 +5,17 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import GSAPWrapper from "@/components/GSAPWrapper";
-import { Bell, Search, UserCircle, Menu, X, Sun, Moon } from "lucide-react";
-
+import { Bell, Search, UserCircle, Menu, Sun, Moon, X, TrendingUp, AlertCircle, CheckCircle } from "lucide-react";
 import NommoAI from "@/components/dashboard/NommoAI";
+import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebase/config";
+
+interface Notification {
+  id: string;
+  type: "sale" | "alert" | "system";
+  message: string;
+  createdAt: string;
+}
 
 export default function DashboardLayout({
   children,
@@ -19,6 +27,9 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!loading && (!user || !profile)) {
@@ -36,17 +47,45 @@ export default function DashboardLayout({
       isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     }
     setIsDarkMode(isDark);
-    // Also set on documentElement so body inherits dark styles
     if (isDark) {
+      document.documentElement.setAttribute("data-theme", "dark");
       document.documentElement.classList.add("dark");
-      document.body.style.backgroundColor = "#1A0F0A";
-      document.body.style.color = "#F7EAE3";
+      document.body.style.backgroundColor = "#150C07";
+      document.body.style.color = "#F5E8D8";
     } else {
+      document.documentElement.setAttribute("data-theme", "light");
       document.documentElement.classList.remove("dark");
       document.body.style.backgroundColor = "#FAF3E0";
-      document.body.style.color = "#2D1A12";
+      document.body.style.color = "#1A0A04";
     }
   }, []);
+
+  // Load read notification IDs from localStorage
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("nyablo_read_notifs") || "[]");
+      setReadIds(new Set(stored));
+    } catch {}
+  }, []);
+
+  // Real-time notifications from latest daily_entries
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, "daily_entries"), orderBy("createdAt", "desc"), limit(8));
+    const unsub = onSnapshot(q, (snap) => {
+      const notifs: Notification[] = snap.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          type: "sale",
+          message: `Nouvelle saisie : ${data.clientName || "Client"} — ${Number(data.totalAmount || 0).toLocaleString()} FCFA`,
+          createdAt: data.createdAt || data.date || new Date().toISOString(),
+        };
+      });
+      setNotifications(notifs);
+    });
+    return () => unsub();
+  }, [user]);
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -58,17 +97,39 @@ export default function DashboardLayout({
     setIsDarkMode(nextMode);
     if (nextMode) {
       localStorage.setItem("theme", "dark");
+      document.documentElement.setAttribute("data-theme", "dark");
       document.documentElement.classList.add("dark");
-      document.body.style.backgroundColor = "#1A0F0A";
-      document.body.style.color = "#F7EAE3";
+      document.body.style.backgroundColor = "#150C07";
+      document.body.style.color = "#F5E8D8";
     } else {
       localStorage.setItem("theme", "light");
+      document.documentElement.setAttribute("data-theme", "light");
       document.documentElement.classList.remove("dark");
       document.body.style.backgroundColor = "#FAF3E0";
-      document.body.style.color = "#2D1A12";
+      document.body.style.color = "#1A0A04";
     }
   };
 
+  const unreadCount = notifications.filter(n => !readIds.has(n.id)).length;
+
+  const markAllRead = () => {
+    const allIds = notifications.map(n => n.id);
+    const newSet = new Set([...readIds, ...allIds]);
+    setReadIds(newSet);
+    localStorage.setItem("nyablo_read_notifs", JSON.stringify(Array.from(newSet)));
+  };
+
+  const getTimeAgo = (dateStr: string) => {
+    try {
+      const diff = Date.now() - new Date(dateStr).getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return "À l'instant";
+      if (mins < 60) return `Il y a ${mins} min`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `Il y a ${hrs}h`;
+      return `Il y a ${Math.floor(hrs / 24)}j`;
+    } catch { return "Récemment"; }
+  };
 
   if (loading || !user) {
     return (
@@ -79,7 +140,7 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className={`flex min-h-screen bg-[#FAF3E0] text-[#2D1A12] transition-colors duration-300 ${isDarkMode ? "dark bg-[#1A0F0A] text-[#F7EAE3]" : ""}`}>
+    <div className={`flex min-h-screen transition-colors duration-300 ${isDarkMode ? "dark" : ""}`} style={{ backgroundColor: 'var(--bg-base)', color: 'var(--fg-base)' }}>
       {/* Large screen sidebar */}
       <div className="hidden lg:block">
         <Sidebar />
@@ -102,7 +163,7 @@ export default function DashboardLayout({
         <header className="h-20 bg-white/80 backdrop-blur-md border-b border-[#E8DCC4] sticky top-0 z-30 px-6 flex items-center justify-between">
           <div className="flex items-center gap-4 lg:hidden">
              <button 
-               className="p-2 hover:bg-[#FAF3E0] rounded-lg transition-colors"
+               className="p-2 hover:bg-[#FAF3E0] rounded-lg transition-colors cursor-pointer"
                onClick={() => setIsMobileMenuOpen(true)}
              >
                 <Menu className="w-6 h-6 text-[#5C3D2E]" />
@@ -120,21 +181,87 @@ export default function DashboardLayout({
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Theme toggle */}
             <button 
               onClick={toggleTheme}
               className="p-2.5 hover:bg-[#FAF3E0]/50 rounded-xl border border-[#E8DCC4] transition-all duration-300 group flex items-center justify-center cursor-pointer"
               title={isDarkMode ? "Thème clair" : "Thème sombre"}
             >
               {isDarkMode ? (
-                <Sun className="w-5 h-5 text-[#D4AF37] animate-spin-slow" />
+                <Sun className="w-5 h-5 text-[#D4AF37]" />
               ) : (
                 <Moon className="w-5 h-5 text-[#5C3D2E] group-hover:rotate-12 transition-transform" />
               )}
             </button>
-            <button className="relative p-2.5 hover:bg-[#FAF3E0] rounded-xl border border-[#E8DCC4] transition-colors group">
-              <Bell className="w-5 h-5 text-[#B89E7E] group-hover:text-[#A66037]" />
-              <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-[#A66037] rounded-full border-2 border-white" />
-            </button>
+
+            {/* Notifications */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  const newState = !notifOpen;
+                  setNotifOpen(newState);
+                  if (newState) markAllRead();
+                }}
+                className="relative p-2.5 hover:bg-[#FAF3E0] rounded-xl border border-[#E8DCC4] transition-colors group cursor-pointer"
+              >
+                <Bell className="w-5 h-5 text-[#B89E7E] group-hover:text-[#A66037]" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-[#A66037] text-white text-[9px] font-bold rounded-full flex items-center justify-center shadow-sm animate-pulse">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notification Panel */}
+              {notifOpen && (
+                <div className="absolute right-0 top-full mt-3 w-96 bg-white rounded-[24px] shadow-2xl border border-[#E8DCC4] overflow-hidden z-50">
+                  <div className="p-5 border-b border-[#E8DCC4]/50 flex items-center justify-between bg-[#FAF3E0]/40">
+                    <div>
+                      <h3 className="font-bold text-[#5C3D2E] font-dogon">Activité Récente</h3>
+                      <p className="text-[10px] text-[#B89E7E] uppercase tracking-wider">Dernières saisies — temps réel</p>
+                    </div>
+                    <button onClick={() => setNotifOpen(false)} className="p-1.5 hover:bg-[#E8DCC4]/50 rounded-lg transition-colors cursor-pointer">
+                      <X className="w-4 h-4 text-[#B89E7E]" />
+                    </button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                    {notifications.length === 0 ? (
+                      <div className="py-12 text-center text-[#B89E7E] italic text-sm">
+                        <Bell className="w-8 h-8 mx-auto mb-3 opacity-30" />
+                        Aucune activité récente
+                      </div>
+                    ) : (
+                      notifications.map(notif => {
+                        const isRead = readIds.has(notif.id);
+                        return (
+                          <div key={notif.id} className={`flex items-start gap-3 p-4 border-b border-[#E8DCC4]/20 transition-colors hover:bg-[#FAF3E0]/30 ${!isRead ? "bg-[#FAF3E0]/20" : ""}`}>
+                            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 mt-0.5 bg-emerald-100">
+                              <TrendingUp className="w-4 h-4 text-emerald-600" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-[#2D1A12] leading-snug">{notif.message}</p>
+                              <p className="text-[10px] text-[#B89E7E] mt-1">{getTimeAgo(notif.createdAt)}</p>
+                            </div>
+                            {!isRead && <span className="w-2 h-2 bg-[#D4AF37] rounded-full shrink-0 mt-2" />}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                  {notifications.length > 0 && (
+                    <div className="p-3 border-t border-[#E8DCC4]/30 bg-[#FAF3E0]/20 text-center">
+                      <button
+                        onClick={() => { setNotifOpen(false); router.push("/dashboard/entries"); }}
+                        className="text-xs font-bold text-[#A66037] hover:text-[#5C3D2E] transition-colors cursor-pointer"
+                      >
+                        Voir toutes les saisies →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="h-8 w-[1px] bg-[#E8DCC4] mx-1" />
             <div className="flex items-center gap-3 pl-1">
                <div className="text-right hidden sm:block">
@@ -157,6 +284,11 @@ export default function DashboardLayout({
           <NommoAI />
         </main>
       </div>
+
+      {/* Close notif panel when clicking outside */}
+      {notifOpen && (
+        <div className="fixed inset-0 z-20" onClick={() => setNotifOpen(false)} />
+      )}
     </div>
   );
 }
