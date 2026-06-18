@@ -264,7 +264,7 @@ export default function CompaniesPage() {
                 <XAxis dataKey="name" stroke="#B89E7E" fontSize={10} tickLine={false} />
                 <YAxis stroke="#B89E7E" fontSize={10} tickLine={false} tickFormatter={(v) => `${(v / 1000).toLocaleString()}k`} />
                 <Tooltip 
-                  formatter={(value: any, name: string) => [`${Number(value).toLocaleString()} ${currency}`, name === "sales" ? "Ventes" : "Encaissé"]}
+                  formatter={(value: any, name: any) => [`${Number(value).toLocaleString()} ${currency}`, name === "sales" ? "Ventes" : "Encaissé"]}
                   contentStyle={{ backgroundColor: "#FAF3E0", borderRadius: "16px", border: "1px solid #E8DCC4", fontSize: "12px", fontFamily: "Outfit" }}
                 />
                 <Bar dataKey="sales" name="sales" fill="#A66037" radius={[8, 8, 0, 0]} maxBarSize={40}>

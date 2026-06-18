@@ -14,6 +14,7 @@ import {
   Users,
   ShieldCheck,
   ChevronRight,
+  Gift,
   X
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -27,6 +28,7 @@ const MENU_ITEMS = [
   { icon: History, label: "Saisies de Vente", href: "/dashboard/entries" },
   { icon: Building2, label: "Entreprises", href: "/dashboard/companies" },
   { icon: Users, label: "Forces de Vente", href: "/dashboard/users" },
+  { icon: Gift, label: "Parrainages & Codes", href: "/dashboard/parrainage" },
   { icon: ShieldCheck, label: "Journal d'Audit", href: "/dashboard/audit" },
   { icon: FileText, label: "Archives & Exports", href: "/dashboard/exports" },
   { icon: Settings, label: "Paramètres", href: "/dashboard/settings" },

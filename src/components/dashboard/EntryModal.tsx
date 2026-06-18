@@ -4,11 +4,13 @@ import React, { useRef, useState, useEffect } from "react";
 import { X, Save, Plus, Trash2, Sparkles, Loader2 } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { collection, addDoc, serverTimestamp, getDocs, query, orderBy, doc, increment, updateDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, getDocs, query, orderBy, doc, increment, updateDoc, deleteDoc, onSnapshot, where } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
 import { useAuth } from "@/context/AuthContext";
 import toast from "react-hot-toast";
 import { logAction } from "@/lib/audit";
+
+import { verifyReferralCode, createReferralAttribution, updateReferralMemberStats, normalizePhone } from "@/lib/referral";
 
 interface EntryModalProps {
   isOpen: boolean;
@@ -34,6 +36,11 @@ export interface EditableEntry {
   resteAVerser: number;
   canal: string;
   modePaiement: string;
+  hasReferral?: string;
+  referralCode?: string;
+  referralMemberId?: string;
+  referralNote?: string;
+  referralMethod?: string;
 }
 
 interface Company {
@@ -51,6 +58,11 @@ interface EntryItem {
   paidAmount: string;
   canal: string;
   modePaiement: string;
+  hasReferral: string;
+  referralCode: string;
+  referralMemberId: string;
+  referralNote: string;
+  referralMethod?: string;
 }
 
 const ENGINS_PRICES: Record<string, number> = {
@@ -80,7 +92,12 @@ const createEmptyItem = (): EntryItem => ({
   totalAmount: "",
   paidAmount: "",
   canal: "Direct",
-  modePaiement: "Espèces"
+  modePaiement: "Espèces",
+  hasReferral: "Non",
+  referralCode: "",
+  referralMemberId: "",
+  referralNote: "",
+  referralMethod: "manual"
 });
 
 const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
@@ -90,6 +107,20 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
   const [loading, setLoading] = useState(false);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [currency, setCurrency] = useState("FCFA");
+
+  // Referral Module States
+  const [verificationStates, setVerificationStates] = useState<Record<string, {
+    status: "valid" | "not_found" | "suspended" | "campaign_ended" | "self_referral" | "duplicate";
+    message: string;
+    member?: any;
+    codeDoc?: any;
+  }>>({});
+  const [existingAttribution, setExistingAttribution] = useState<any>(null);
+  const [modificationReason, setModificationReason] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearchingReferral, setIsSearchingReferral] = useState<Record<string, boolean>>({});
+  const [showQRScannerSim, setShowQRScannerSim] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "settings", "enterprise"), (docSnap) => {
@@ -116,41 +147,93 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
 
   // If editing, populate form
   useEffect(() => {
-    if (editEntry && isOpen) {
-      setCommonData({
-        date: editEntry.date || new Date().toISOString().split('T')[0],
-        companyId: editEntry.companyId || "",
-        session: editEntry.session || "Matin",
-        localisation: editEntry.localisation || "Abidjan",
-        status: editEntry.status || "Confirmé",
-        prochaineAction: editEntry.prochaineAction || "",
-        observation: editEntry.observation || ""
-      });
-      setItems([{
-        id: editEntry.id,
-        clientName: editEntry.clientName || "",
-        clientContact: editEntry.clientContact || "",
-        engin: editEntry.engin || "",
-        motif: editEntry.motif || "",
-        totalAmount: String(editEntry.totalAmount || ""),
-        paidAmount: String(editEntry.paidAmount || ""),
-        canal: editEntry.canal || "Direct",
-        modePaiement: editEntry.modePaiement || "Espèces"
-      }]);
-    } else if (!editEntry && isOpen) {
-      // Reset for new entry
-      setCommonData({
-        date: new Date().toISOString().split('T')[0],
-        companyId: companies.length > 0 ? companies[0].name : "",
-        session: "Matin",
-        localisation: "Abidjan",
-        status: "Confirmé",
-        prochaineAction: "",
-        observation: ""
-      });
-      setItems([createEmptyItem()]);
-    }
-  }, [editEntry, isOpen]);
+    const loadData = async () => {
+      if (editEntry && isOpen) {
+        setCommonData({
+          date: editEntry.date || new Date().toISOString().split('T')[0],
+          companyId: editEntry.companyId || "",
+          session: editEntry.session || "Matin",
+          localisation: editEntry.localisation || "Abidjan",
+          status: editEntry.status || "Confirmé",
+          prochaineAction: editEntry.prochaineAction || "",
+          observation: editEntry.observation || ""
+        });
+
+        let hasRef = "Non";
+        let code = "";
+        let memberId = "";
+        let note = "";
+        let method = "manual";
+
+        try {
+          const q = query(
+            collection(db, "referral_attributions"),
+            where("entryId", "==", editEntry.id)
+          );
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            const attrDoc = snap.docs[0];
+            const attrData = attrDoc.data();
+            setExistingAttribution({ id: attrDoc.id, ...attrData });
+            hasRef = "Oui";
+            code = attrData.referralCodeId || "";
+            memberId = attrData.referralMemberId || "";
+            note = attrData.note || "";
+            method = attrData.attributionMethod || "manual";
+
+            // Vérifier et charger les infos du parrain
+            const verifyRes = await verifyReferralCode(code, editEntry.clientContact);
+            setVerificationStates({
+              [editEntry.id]: {
+                status: verifyRes.status,
+                message: verifyRes.message,
+                member: verifyRes.member,
+                codeDoc: verifyRes.codeDoc
+              }
+            });
+          } else {
+            setExistingAttribution(null);
+            setVerificationStates({});
+          }
+        } catch (e) {
+          console.error("Error loading existing referral attribution:", e);
+        }
+
+        setItems([{
+          id: editEntry.id,
+          clientName: editEntry.clientName || "",
+          clientContact: editEntry.clientContact || "",
+          engin: editEntry.engin || "",
+          motif: editEntry.motif || "",
+          totalAmount: String(editEntry.totalAmount || ""),
+          paidAmount: String(editEntry.paidAmount || ""),
+          canal: editEntry.canal || "Direct",
+          modePaiement: editEntry.modePaiement || "Espèces",
+          hasReferral: hasRef,
+          referralCode: code,
+          referralMemberId: memberId,
+          referralNote: note,
+          referralMethod: method
+        }]);
+      } else if (!editEntry && isOpen) {
+        // Reset for new entry
+        setCommonData({
+          date: new Date().toISOString().split('T')[0],
+          companyId: companies.length > 0 ? companies[0].name : "",
+          session: "Matin",
+          localisation: "Abidjan",
+          status: "Confirmé",
+          prochaineAction: "",
+          observation: ""
+        });
+        setItems([createEmptyItem()]);
+        setExistingAttribution(null);
+        setVerificationStates({});
+        setModificationReason("");
+      }
+    };
+    loadData();
+  }, [editEntry, isOpen, companies.length]);
 
   useEffect(() => {
     const fetchCompanies = async () => {
@@ -168,6 +251,54 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
     };
     if (isOpen) fetchCompanies();
   }, [isOpen]);
+
+  const handleCheckCode = async (item: EntryItem) => {
+    if (!item.referralCode.trim()) {
+      toast.error("Veuillez saisir un code.");
+      return;
+    }
+    const result = await verifyReferralCode(item.referralCode, item.clientContact);
+    setVerificationStates(prev => ({
+      ...prev,
+      [item.id]: {
+        status: result.status,
+        message: result.message,
+        member: result.member,
+        codeDoc: result.codeDoc
+      }
+    }));
+    if (result.status === "valid") {
+      updateItem(item.id, 'referralMemberId', result.member.id);
+      toast.success("Code valide ! Parrain identifié.");
+    } else {
+      updateItem(item.id, 'referralMemberId', "");
+      toast.error(result.message);
+    }
+  };
+
+  const handleSearchReferrals = async (itemId: string, queryText: string) => {
+    if (!queryText.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    try {
+      const q = query(collection(db, "referral_members"));
+      const snap = await getDocs(q);
+      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const filtered = list.filter((m: any) => {
+        const nom = (m.nom || "").toLowerCase();
+        const prenom = (m.prenom || "").toLowerCase();
+        const tel = (m.telephoneNormalise || "").toLowerCase();
+        const code = (m.codeId || "").toLowerCase();
+        const text = queryText.toLowerCase();
+        return nom.includes(text) || prenom.includes(text) || tel.includes(text) || code.includes(text);
+      });
+      setSearchResults(filtered);
+    } catch (e) {
+      console.error(e);
+      toast.error("Erreur lors de la recherche des parrains.");
+    }
+  };
 
   useGSAP(() => {
     if (isOpen) {
@@ -201,6 +332,12 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
     try {
       await deleteDoc(doc(db, "daily_entries", editEntry.id));
       
+      // Nettoyer le parrainage associé
+      if (existingAttribution) {
+        await deleteDoc(doc(db, "referral_attributions", existingAttribution.id));
+        await updateReferralMemberStats(existingAttribution.referralMemberId);
+      }
+
       // Decrement user's entriesCount
       const creatorUid = (editEntry as any).createdBy;
       if (creatorUid) {
@@ -230,6 +367,29 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
     e.preventDefault();
     setLoading(true);
 
+    // 1. Validation de sécurité côté client
+    for (const item of items) {
+      if (item.hasReferral === "Oui") {
+        if (!item.referralMemberId) {
+          toast.error(`Veuillez vérifier et rattacher le code parrain pour ${item.clientName || 'l\'apprenant'}.`);
+          setLoading(false);
+          return;
+        }
+      }
+    }
+
+    // 2. Motif obligatoire si modification du parrainage existant
+    if (editEntry && existingAttribution) {
+      const item = items[0];
+      const hasChangedReferral = (item.hasReferral === "Oui" && item.referralCode !== existingAttribution.referralCodeId) || 
+                                 (item.hasReferral !== "Oui");
+      if (hasChangedReferral && !modificationReason.trim()) {
+        toast.error("Veuillez renseigner le motif de modification du parrainage.");
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
       if (editEntry) {
         // Update existing entry
@@ -250,6 +410,87 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
           modePaiement: item.modePaiement,
           updatedAt: new Date().toISOString()
         });
+
+        // Gestion du parrainage lors de l'édition
+        const hasChangedReferral = (item.hasReferral === "Oui" && item.referralCode !== existingAttribution?.referralCodeId) || 
+                                   (item.hasReferral !== "Oui" && existingAttribution);
+
+        if (existingAttribution && hasChangedReferral) {
+          await logAction(
+            profile?.uid,
+            profile?.email,
+            "referral_update",
+            `Modification parrainage pour l'inscrit ${item.clientName}. Ancien code: ${existingAttribution.referralCodeId}, Nouveau: ${item.referralCode || 'Aucun'}. Motif: ${modificationReason}`,
+            commonData.companyId
+          );
+
+          if (item.hasReferral === "Oui" && item.referralMemberId) {
+            const vState = verificationStates[item.id];
+            const campaignId = vState?.codeDoc?.campaignId || "campagne_2026";
+            const codeId = vState?.codeDoc?.code || item.referralCode.trim().toUpperCase();
+
+            await updateDoc(doc(db, "referral_attributions", existingAttribution.id), {
+              referralMemberId: item.referralMemberId,
+              referralCodeId: codeId,
+              campaignId: campaignId,
+              note: item.referralNote || "",
+              status: commonData.status,
+              updatedAt: new Date().toISOString()
+            });
+
+            await addDoc(collection(db, "referral_status_history"), {
+              attributionId: existingAttribution.id,
+              previousStatus: existingAttribution.status,
+              newStatus: commonData.status,
+              changedBy: profile?.uid || "anonymous",
+              reason: `Modification parrainage: ${modificationReason}`,
+              createdAt: new Date().toISOString()
+            });
+
+            await updateReferralMemberStats(existingAttribution.referralMemberId);
+            await updateReferralMemberStats(item.referralMemberId);
+          } else {
+            // Suppression du parrainage
+            await deleteDoc(doc(db, "referral_attributions", existingAttribution.id));
+            await updateReferralMemberStats(existingAttribution.referralMemberId);
+          }
+        } else if (!existingAttribution && item.hasReferral === "Oui" && item.referralMemberId) {
+          // Nouveau parrainage rajouté en édition
+          const vState = verificationStates[item.id];
+          const campaignId = vState?.codeDoc?.campaignId || "campagne_2026";
+          const codeId = vState?.codeDoc?.code || item.referralCode.trim().toUpperCase();
+
+          await createReferralAttribution({
+            entryId: editEntry.id,
+            studentName: item.clientName,
+            studentPhone: item.clientContact,
+            referralMemberId: item.referralMemberId,
+            referralCodeId: codeId,
+            campaignId: campaignId,
+            attributionMethod: (item.referralMethod as any) || "manual",
+            recordedBy: profile?.uid || "anonymous",
+            recordedByName: profile?.displayName || "Agent Commercial",
+            status: commonData.status,
+            note: item.referralNote || ""
+          });
+        } else if (existingAttribution && existingAttribution.status !== commonData.status) {
+          // Statut modifié, on répercute sur l'attribution et recalcule
+          await updateDoc(doc(db, "referral_attributions", existingAttribution.id), {
+            status: commonData.status,
+            updatedAt: new Date().toISOString()
+          });
+
+          await addDoc(collection(db, "referral_status_history"), {
+            attributionId: existingAttribution.id,
+            previousStatus: existingAttribution.status,
+            newStatus: commonData.status,
+            changedBy: profile?.uid || "anonymous",
+            reason: "Mise à jour suite au changement de statut de la fiche",
+            createdAt: new Date().toISOString()
+          });
+
+          await updateReferralMemberStats(existingAttribution.referralMemberId);
+        }
         
         await logAction(
           profile?.uid,
@@ -289,6 +530,28 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
               `Création de la saisie pour ${item.clientName} (${total.toLocaleString()} ${currency}, versé: ${paid.toLocaleString()} ${currency})`,
               commonData.companyId
             );
+
+            // Rattachement si code parrain fourni
+            if (item.hasReferral === "Oui" && item.referralMemberId) {
+              const vState = verificationStates[item.id];
+              const campaignId = vState?.codeDoc?.campaignId || "campagne_2026";
+              const codeId = vState?.codeDoc?.code || item.referralCode.trim().toUpperCase();
+
+              await createReferralAttribution({
+                entryId: docRef.id,
+                studentName: item.clientName,
+                studentPhone: item.clientContact,
+                referralMemberId: item.referralMemberId,
+                referralCodeId: codeId,
+                campaignId: campaignId,
+                attributionMethod: (item.referralMethod as any) || "manual",
+                recordedBy: profile?.uid || "anonymous",
+                recordedByName: profile?.displayName || "Agent Commercial",
+                status: commonData.status,
+                note: item.referralNote || ""
+              });
+            }
+
             return docRef;
           });
         });
@@ -300,7 +563,7 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
           const userRef = doc(db, "users", profile.uid);
           await updateDoc(userRef, {
             entriesCount: increment(items.length)
-          }).catch(() => {}); // silently fail if user doc doesn't have field
+          }).catch(() => {});
         }
         
         toast.success(`${items.length} saisie(s) enregistrée(s) !`);
@@ -357,7 +620,7 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
         <div className="flex-1 overflow-y-auto custom-scrollbar">
            <form onSubmit={handleSubmit} className="p-8 space-y-8">
               {/* Common Fields Row */}
-              <div className="bg-white/50 p-6 rounded-[32px] border border-[#E8DCC4] grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="bg-white/50 p-6 rounded-[32px] border border-[#E8DCC4] grid grid-cols-1 md:grid-cols-5 gap-6">
                  <div className="space-y-2">
                     <label className="text-[10px] font-bold text-[#A66037] uppercase tracking-widest pl-1">Date</label>
                     <input 
@@ -398,6 +661,32 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
                       className="w-full px-4 py-3 rounded-xl bg-white border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm outline-none transition-all" 
                       placeholder="Abidjan" 
                     />
+                 </div>
+                 <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-[#A66037] uppercase tracking-widest pl-1">Statut</label>
+                    <select 
+                      value={commonData.status}
+                      disabled={profile?.role === "commerciale" && !!editEntry && commonData.status === "inscription validée"}
+                      onChange={(e) => setCommonData({...commonData, status: e.target.value})}
+                      className="w-full px-4 py-3 rounded-xl bg-white border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm outline-none transition-all"
+                    >
+                       {/* Anciens statuts supportés */}
+                       <option value="Confirmé">Confirmé (Ancien)</option>
+                       <option value="En attente">En attente (Ancien)</option>
+                       <option value="Incomplet">Incomplet (Ancien)</option>
+                       {/* Nouveaux statuts requis */}
+                       <option value="prospect enregistré">prospect enregistré</option>
+                       <option value="inscription en attente">inscription en attente</option>
+                       <option value="paiement à vérifier">paiement à vérifier</option>
+                       <option value="paiement partiel">paiement partiel</option>
+                       <option value="paiement complet">paiement complet</option>
+                       <option value="inscription validée">inscription validée</option>
+                       <option value="inscription refusée">inscription refusée</option>
+                       <option value="inscription annulée">inscription annulée</option>
+                       <option value="remboursement effectué">remboursement effectué</option>
+                       <option value="fraude suspectée">fraude suspectée</option>
+                       <option value="archivée">archivée</option>
+                    </select>
                  </div>
               </div>
 
@@ -541,6 +830,254 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
                                  )}
                               </div>
                            </div>
+
+                           {/* Section Parrainage */}
+                           <div className="mt-6 p-6 rounded-[28px] border border-[#E8DCC4] bg-[#FAF3E0]/30 space-y-4">
+                              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                 <div>
+                                    <label className="text-[10px] font-bold text-[#A66037] uppercase tracking-widest pl-1 block mb-1">
+                                       L’apprenant possède-t-il un code parrain ? *
+                                    </label>
+                                    <div className="flex flex-wrap gap-2">
+                                       {["Non", "Oui", "Ne sait pas", "À vérifier"].map((opt) => (
+                                          <button
+                                             key={opt}
+                                             type="button"
+                                             disabled={profile?.role === "commerciale" && isEditing && existingAttribution}
+                                             onClick={() => {
+                                                updateItem(item.id, 'hasReferral', opt);
+                                                if (opt === "Oui" && item.canal !== "Referral") {
+                                                   updateItem(item.id, 'canal', "Referral");
+                                                }
+                                             }}
+                                             className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                                                item.hasReferral === opt
+                                                   ? "bg-[#5C3D2E] text-white border-[#5C3D2E] shadow-sm"
+                                                   : "bg-white text-[#5C3D2E] border-[#E8DCC4] hover:bg-[#FAF3E0]"
+                                             }`}
+                                          >
+                                             {opt}
+                                          </button>
+                                       ))}
+                                    </div>
+                                 </div>
+                                 
+                                 {item.hasReferral === "Oui" && (
+                                    <div className="flex gap-2">
+                                       <button
+                                          type="button"
+                                          disabled={profile?.role === "commerciale" && isEditing && existingAttribution}
+                                          onClick={() => setIsSearchingReferral(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                                          className="px-4 py-2 bg-[#FAF3E0] hover:bg-[#E8DCC4]/30 border border-[#E8DCC4] text-[#5C3D2E] rounded-xl text-xs font-bold transition-all shadow-sm"
+                                       >
+                                          🔍 Rechercher un parrain
+                                       </button>
+                                       <button
+                                          type="button"
+                                          disabled={profile?.role === "commerciale" && isEditing && existingAttribution}
+                                          onClick={() => setShowQRScannerSim(item.id)}
+                                          className="px-4 py-2 bg-white hover:bg-[#FAF3E0] border border-[#E8DCC4] text-[#A66037] rounded-xl text-xs font-bold transition-all shadow-sm"
+                                       >
+                                          📷 Scanner QR
+                                       </button>
+                                    </div>
+                                 )}
+                              </div>
+
+                              {/* Search Drawer Inline */}
+                              {isSearchingReferral[item.id] && (
+                                 <div className="p-4 bg-white rounded-2xl border border-[#E8DCC4] space-y-3 shadow-inner">
+                                    <div className="flex gap-2">
+                                       <input
+                                          type="text"
+                                          placeholder="Rechercher par nom, prénom, code ou téléphone..."
+                                          value={searchQuery}
+                                          onChange={(e) => {
+                                             setSearchQuery(e.target.value);
+                                             handleSearchReferrals(item.id, e.target.value);
+                                          }}
+                                          className="flex-1 px-4 py-2.5 rounded-xl bg-[#FAF3E0]/20 border border-[#E8DCC4] text-xs font-semibold outline-none"
+                                       />
+                                       <button
+                                          type="button"
+                                          onClick={() => {
+                                             setIsSearchingReferral(prev => ({ ...prev, [item.id]: false }));
+                                             setSearchResults([]);
+                                             setSearchQuery("");
+                                          }}
+                                          className="px-4 py-2 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-xl text-xs font-bold transition-all"
+                                       >
+                                          Annuler
+                                       </button>
+                                    </div>
+                                    <div className="max-h-40 overflow-y-auto space-y-1 custom-scrollbar">
+                                       {searchResults.length > 0 ? (
+                                          searchResults.map((res: any) => (
+                                             <button
+                                                key={res.id}
+                                                type="button"
+                                                onClick={() => {
+                                                   updateItem(item.id, 'referralCode', res.codeId);
+                                                   updateItem(item.id, 'referralMemberId', res.id);
+                                                   updateItem(item.id, 'referralMethod', "search");
+                                                   setIsSearchingReferral(prev => ({ ...prev, [item.id]: false }));
+                                                   setSearchResults([]);
+                                                   setSearchQuery("");
+                                                   verifyReferralCode(res.codeId, item.clientContact).then(verifyRes => {
+                                                      setVerificationStates(prev => ({
+                                                         ...prev,
+                                                         [item.id]: {
+                                                            status: verifyRes.status,
+                                                            message: verifyRes.message,
+                                                            member: verifyRes.member,
+                                                            codeDoc: verifyRes.codeDoc
+                                                         }
+                                                      }));
+                                                   });
+                                                }}
+                                                className="w-full text-left px-3 py-2 hover:bg-[#FAF3E0]/50 rounded-lg text-xs font-semibold text-[#5C3D2E] border border-transparent hover:border-[#E8DCC4] transition-all flex justify-between items-center"
+                                             >
+                                                <span>{res.prenom} {res.nom} ({res.codeId})</span>
+                                                <span className="text-[10px] text-[#A66037]">{res.telephoneNormalise}</span>
+                                             </button>
+                                          ))
+                                       ) : searchQuery ? (
+                                          <p className="text-center py-4 text-xs text-[#B89E7E] italic">Aucun parrain trouvé.</p>
+                                       ) : (
+                                          <p className="text-[10px] text-[#B89E7E] italic">Saisissez les premières lettres pour rechercher...</p>
+                                       )}
+                                    </div>
+                                 </div>
+                              )}
+
+                              {item.hasReferral === "Oui" && (
+                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="space-y-2">
+                                       <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Saisir le Code Parrain</label>
+                                       <div className="flex gap-2">
+                                          <input
+                                             value={item.referralCode}
+                                             disabled={profile?.role === "commerciale" && isEditing && existingAttribution}
+                                             onChange={(e) => updateItem(item.id, 'referralCode', e.target.value.toUpperCase())}
+                                             placeholder="Ex: MAMADOU26"
+                                             className="flex-1 px-4 py-3 rounded-xl bg-white border border-[#E8DCC4] font-bold text-sm outline-none focus:ring-2 focus:ring-[#D4AF37]/20"
+                                          />
+                                          <button
+                                             type="button"
+                                             onClick={() => handleCheckCode(item)}
+                                             className="px-4 py-3 bg-[#5C3D2E] text-white font-bold text-xs rounded-xl hover:bg-[#A66037] transition-all shadow-md"
+                                          >
+                                             Vérifier
+                                          </button>
+                                       </div>
+                                    </div>
+
+                                    <div className="md:col-span-2 bg-white/70 p-4 rounded-xl border border-[#E8DCC4] flex flex-col justify-center text-xs space-y-1.5 min-h-[72px] relative overflow-hidden">
+                                       {verificationStates[item.id] ? (
+                                          <div className="space-y-1">
+                                             <div className="flex items-center gap-2">
+                                                <span className={`w-2.5 h-2.5 rounded-full ${verificationStates[item.id].status === "valid" ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`} />
+                                                <p className={`font-bold ${verificationStates[item.id].status === "valid" ? "text-emerald-700" : "text-red-500"}`}>
+                                                   {verificationStates[item.id].message}
+                                                </p>
+                                             </div>
+                                             {verificationStates[item.id].status === "valid" && verificationStates[item.id].member && (
+                                                <div className="text-[10px] text-[#A66037] grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 mt-1 pt-1.5 border-t border-[#E8DCC4]/30">
+                                                   <p><strong>Parrain</strong> : {verificationStates[item.id].member.prenom} {verificationStates[item.id].member.nom}</p>
+                                                   <p><strong>Téléphone</strong> : {verificationStates[item.id].member.telephoneNormalise.replace(/(.{3})(.{3})(.{4})/, "$1 $2 ***")}</p>
+                                                   <p><strong>Campagne</strong> : {verificationStates[item.id].codeDoc?.campaignId || "Campagne de test"}</p>
+                                                   <p><strong>Progression</strong> : <span className="font-bold text-[#5C3D2E]">{verificationStates[item.id].member.progression} / 5 validés</span></p>
+                                                </div>
+                                             )}
+                                          </div>
+                                       ) : (
+                                          <p className="text-[#B89E7E] italic">En attente de saisie du code et de vérification...</p>
+                                       )}
+                                    </div>
+                                 </div>
+                              )}
+
+                              {item.hasReferral === "Oui" && (
+                                 <div className="space-y-2">
+                                    <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest ml-1">Note de Parrainage (facultative)</label>
+                                    <input
+                                       value={item.referralNote}
+                                       disabled={profile?.role === "commerciale" && isEditing && existingAttribution}
+                                       onChange={(e) => updateItem(item.id, 'referralNote', e.target.value)}
+                                       placeholder="Notes additionnelles (ex: justificatif de contact, relation parrain-filleul...)"
+                                       className="w-full px-4 py-3 rounded-xl bg-white border border-[#E8DCC4] text-xs font-semibold outline-none"
+                                    />
+                                 </div>
+                              )}
+
+                              {/* Warning and Reason input for modification of validated referrals */}
+                              {isEditing && existingAttribution && (item.referralCode !== existingAttribution.referralCodeId || item.hasReferral === "Non") && (
+                                 <div className="p-4 bg-red-50 rounded-2xl border border-red-200 text-xs text-red-800 space-y-2 mt-2">
+                                    <p className="font-bold">⚠️ Modification d&apos;attribution détectée</p>
+                                    <p className="text-[10px]">Cette action réaffectera l&apos;inscription et recalculera immédiatement la progression du parrain. La trace sera inscrite dans le journal d&apos;audit.</p>
+                                    <div className="space-y-1">
+                                       <label className="text-[9px] font-bold text-red-600 uppercase tracking-widest">Motif de modification obligatoire *</label>
+                                       <input
+                                          required
+                                          value={modificationReason}
+                                          onChange={(e) => setModificationReason(e.target.value)}
+                                          placeholder="Ex: Correction erreur de saisie commerciale, ré-attribution suite appel..."
+                                          className="w-full px-4 py-2.5 rounded-xl bg-white border border-red-200 text-xs font-semibold outline-none text-[#5C3D2E] focus:ring-2 focus:ring-red-400/20"
+                                       />
+                                    </div>
+                                 </div>
+                              )}
+                           </div>
+
+                           {/* QR Code Scanner Simulator Overlay */}
+                           {showQRScannerSim === item.id && (
+                             <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
+                                <div className="bg-[#FAF3E0] p-6 rounded-[32px] border border-[#E8DCC4] w-full max-w-md space-y-4 shadow-2xl relative text-center">
+                                   <h4 className="text-lg font-dogon font-bold text-[#5C3D2E]">Simulateur de Scan QR Code</h4>
+                                   <p className="text-xs text-[#B89E7E]">Présentez la preuve de parrainage ou sélectionnez un code détecté :</p>
+                                   
+                                   <div className="flex flex-col gap-2 pt-2">
+                                      {["MAMADOU26", "KADI26", "ADAMA26"].map((seedCode) => (
+                                         <button
+                                            key={seedCode}
+                                            type="button"
+                                            onClick={() => {
+                                               updateItem(item.id, 'referralCode', seedCode);
+                                               updateItem(item.id, 'referralMethod', "qr_code");
+                                               setShowQRScannerSim(null);
+                                               verifyReferralCode(seedCode, item.clientContact).then(verifyRes => {
+                                                  setVerificationStates(prev => ({
+                                                     ...prev,
+                                                     [item.id]: {
+                                                        status: verifyRes.status,
+                                                        message: verifyRes.message,
+                                                        member: verifyRes.member,
+                                                        codeDoc: verifyRes.codeDoc
+                                                     }
+                                                  }));
+                                               });
+                                               toast.success(`Code QR ${seedCode} scanné avec succès !`);
+                                            }}
+                                            className="w-full py-3 bg-white hover:bg-[#FAF3E0] border border-[#E8DCC4] text-xs font-bold text-[#5C3D2E] rounded-xl hover:scale-[1.02] transition-all flex justify-between px-6 cursor-pointer"
+                                         >
+                                            <span>Code Parrain: <strong>{seedCode}</strong></span>
+                                            <span className="text-[10px] text-[#A66037]">{seedCode === "ADAMA26" ? "🔴 Suspendu" : "🟢 Actif"}</span>
+                                         </button>
+                                      ))}
+                                   </div>
+                                   
+                                   <div className="border-t border-[#E8DCC4] pt-4 flex gap-2">
+                                      <button
+                                         type="button"
+                                         onClick={() => setShowQRScannerSim(null)}
+                                         className="flex-1 py-3 bg-[#5C3D2E] text-white text-xs font-bold rounded-xl hover:bg-[#A66037] transition-colors cursor-pointer"
+                                      >
+                                         Fermer
+                                      </button>
+                                   </div>
+                                </div>
+                             </div>
+                           )}
                         </div>
                      ))}
                   </div>

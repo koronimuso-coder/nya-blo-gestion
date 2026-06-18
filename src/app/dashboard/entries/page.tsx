@@ -64,10 +64,21 @@ const StatusBadge = ({ status }: { status: string }) => {
     "Confirmé": "bg-emerald-50 text-emerald-700 border-emerald-100",
     "En attente": "bg-amber-50 text-amber-700 border-amber-100",
     "Incomplet": "bg-orange-50 text-orange-700 border-orange-100",
+    "prospect enregistré": "bg-slate-50 text-slate-600 border-slate-100",
+    "inscription en attente": "bg-amber-50 text-amber-600 border-amber-100",
+    "paiement à vérifier": "bg-yellow-50 text-yellow-700 border-yellow-100",
+    "paiement partiel": "bg-orange-50 text-orange-600 border-orange-100",
+    "paiement complet": "bg-teal-50 text-teal-700 border-teal-100",
+    "inscription validée": "bg-emerald-100 text-emerald-800 border-emerald-200",
+    "inscription refusée": "bg-red-50 text-red-700 border-red-100",
+    "inscription annulée": "bg-rose-50 text-rose-600 border-rose-100",
+    "remboursement effectué": "bg-indigo-50 text-indigo-700 border-indigo-100",
+    "fraude suspectée": "bg-red-100 text-red-800 border-red-200 animate-pulse",
+    "archivée": "bg-gray-100 text-gray-500 border-gray-200",
   };
   const cls = map[status] || "bg-blue-50 text-blue-700 border-blue-100";
   return (
-    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${cls}`}>
+    <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${cls} whitespace-nowrap`}>
       {status || "Confirmé"}
     </span>
   );
@@ -108,6 +119,20 @@ export default function EntriesPage() {
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "settings", "enterprise"), (docSnap) => {
       if (docSnap.exists()) setCurrency(docSnap.data().currency || "FCFA");
+    });
+    return () => unsub();
+  }, []);
+
+  const [attributions, setAttributions] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "referral_attributions"), (snap) => {
+      const map: Record<string, any> = {};
+      snap.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        map[data.entryId] = { id: docSnap.id, ...data };
+      });
+      setAttributions(map);
     });
     return () => unsub();
   }, []);
@@ -571,9 +596,20 @@ export default function EntriesPage() {
                   className="w-full px-4 py-2.5 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] text-sm font-bold text-[#5C3D2E] outline-none focus:ring-2 focus:ring-[#D4AF37]/20 cursor-pointer"
                 >
                   <option value="Tous">Tous les statuts</option>
-                  <option value="Confirmé">✅ Confirmé</option>
-                  <option value="En attente">⏳ En attente</option>
-                  <option value="Incomplet">⚠️ Incomplet</option>
+                  <option value="Confirmé">Confirmé (Ancien)</option>
+                  <option value="En attente">En attente (Ancien)</option>
+                  <option value="Incomplet">Incomplet (Ancien)</option>
+                  <option value="prospect enregistré">prospect enregistré</option>
+                  <option value="inscription en attente">inscription en attente</option>
+                  <option value="paiement à vérifier">paiement à vérifier</option>
+                  <option value="paiement partiel">paiement partiel</option>
+                  <option value="paiement complet">paiement complet</option>
+                  <option value="inscription validée">inscription validée</option>
+                  <option value="inscription refusée">inscription refusée</option>
+                  <option value="inscription annulée">inscription annulée</option>
+                  <option value="remboursement effectué">remboursement effectué</option>
+                  <option value="fraude suspectée">fraude suspectée</option>
+                  <option value="archivée">archivée</option>
                 </select>
               </div>
               <div className="space-y-1.5">
@@ -615,6 +651,7 @@ export default function EntriesPage() {
                   { label: "Reste", key: "resteAVerser" as SortKey },
                   { label: "Paiement", key: null },
                   { label: "Canal", key: null },
+                  { label: "Parrainage", key: null },
                   { label: "Statut", key: null },
                   { label: "", key: null },
                 ]).map(({ label, key }, i) => (
@@ -667,6 +704,15 @@ export default function EntriesPage() {
                      <span className="px-3 py-1 bg-purple-50 text-purple-700 rounded-lg text-[10px] font-bold uppercase tracking-tight">
                         {entry.canal || "Direct"}
                      </span>
+                  </td>
+                  <td className="px-8 py-6">
+                     {attributions[entry.id] ? (
+                       <span className="px-3 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-[10px] font-bold uppercase tracking-tight whitespace-nowrap block text-center" title={`Code: ${attributions[entry.id].referralCodeId}`}>
+                          👥 {attributions[entry.id].referralCodeId}
+                       </span>
+                     ) : (
+                       <span className="text-[10px] text-[#B89E7E] italic">Aucun</span>
+                     )}
                   </td>
                   <td className="px-8 py-6">
                     <StatusBadge status={entry.status} />
