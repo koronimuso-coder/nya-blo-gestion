@@ -133,7 +133,7 @@ export async function POST(req: Request) {
     const entryRef = adminDb.collection("daily_entries").doc();
     const entryData = {
       date: new Date().toISOString().split("T")[0],
-      companyId: companyId || "GALF SARL",
+      companyId: companyId || "GALF FORMATION",
       session: "Matin",
       localisation: "En ligne (Site GALF)",
       status: "prospect enregistré",
@@ -175,7 +175,7 @@ export async function POST(req: Request) {
       userEmail: "api@galf.ci",
       action: "referral_api_create",
       details: `Pré-inscription parrainage de ${studentName} via code ${codeUpper} enregistrée.`,
-      companyId: companyId || "GALF SARL",
+      companyId: companyId || "GALF FORMATION",
       timestamp: new Date().toISOString()
     });
 

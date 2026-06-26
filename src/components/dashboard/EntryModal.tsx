@@ -242,15 +242,35 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
         const snapshot = await getDocs(q);
         const list = snapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
         setCompanies(list);
-        if (list.length > 0 && !commonData.companyId && !editEntry) {
-           setCommonData(prev => ({ ...prev, companyId: list[0].name }));
+
+        if (!editEntry) {
+          // Pré-sélection intelligente :
+          // 1. Si la commerciale a des entreprises assignées → prendre la première
+          // 2. Sinon → prendre la première de la liste alphabétique
+          const userCompanyNames = (profile?.companies || []) as string[];
+
+          let defaultCompany = "";
+          if (userCompanyNames.length > 0) {
+            // Chercher le nom de l'entreprise correspondant à l'ID ou nom stocké
+            const matched = list.find(c =>
+              userCompanyNames.includes(c.id) || userCompanyNames.includes(c.name)
+            );
+            defaultCompany = matched ? matched.name : (list[0]?.name || "");
+          } else {
+            defaultCompany = list[0]?.name || "";
+          }
+
+          if (defaultCompany) {
+            setCommonData(prev => ({ ...prev, companyId: prev.companyId || defaultCompany }));
+          }
         }
       } catch (error) {
         console.error("Error fetching companies:", error);
       }
     };
     if (isOpen) fetchCompanies();
-  }, [isOpen]);
+  }, [isOpen, profile?.companies]);
+
 
   const handleCheckCode = async (item: EntryItem) => {
     if (!item.referralCode.trim()) {
@@ -630,17 +650,25 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
                       className="w-full px-4 py-3 rounded-xl bg-white border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm outline-none transition-all" 
                     />
                  </div>
-                 <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-[#A66037] uppercase tracking-widest pl-1">Filiale</label>
-                    <select 
-                      value={commonData.companyId}
-                      onChange={(e) => setCommonData({...commonData, companyId: e.target.value})}
-                      className="w-full px-4 py-3 rounded-xl bg-white border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm appearance-none outline-none transition-all"
-                    >
-                       {companies.length === 0 && <option value="">Aucune entreprise</option>}
-                       {companies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                    </select>
-                 </div>
+                  <div className="space-y-2">
+                     <label className="text-[10px] font-bold text-[#A66037] uppercase tracking-widest pl-1">Filiale</label>
+                     {profile?.role === "commerciale" && companies.length > 0 ? (
+                       // Commerciale : affichage fixe de son entreprise, non modifiable
+                       <div className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0] border border-[#E8DCC4] font-bold text-sm text-[#5C3D2E] flex items-center gap-2">
+                         <span className="w-2 h-2 bg-[#D4AF37] rounded-full" />
+                         {commonData.companyId || (profile.company ? profile.company : companies[0]?.name) || "GALF FORMATION"}
+                       </div>
+                     ) : (
+                       <select 
+                         value={commonData.companyId}
+                         onChange={(e) => setCommonData({...commonData, companyId: e.target.value})}
+                         className="w-full px-4 py-3 rounded-xl bg-white border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-bold text-sm appearance-none outline-none transition-all"
+                       >
+                          {companies.length === 0 && <option value="">Aucune entreprise</option>}
+                          {companies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                       </select>
+                     )}
+                  </div>
                  <div className="space-y-2">
                     <label className="text-[10px] font-bold text-[#A66037] uppercase tracking-widest pl-1">Session</label>
                     <select 
