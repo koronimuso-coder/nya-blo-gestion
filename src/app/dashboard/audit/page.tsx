@@ -23,6 +23,8 @@ import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { logAction } from "@/lib/audit";
 import toast from "react-hot-toast";
+import { jsPDF } from "jspdf";
+import autoTable, { applyPlugin } from "jspdf-autotable";
 
 interface AuditLog {
   id: string;
@@ -54,6 +56,8 @@ export default function AuditPage() {
   const [dataLoading, setDataLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [exporting, setExporting] = useState<string | null>(null);
 
   useEffect(() => {
@@ -126,16 +130,20 @@ export default function AuditPage() {
     
     const matchesAction = actionFilter === "all" || log.action === actionFilter;
 
-    return matchesSearch && matchesAction;
+    let matchesDate = true;
+    if (log.timestamp) {
+      const logDate = log.timestamp.split("T")[0]; // YYYY-MM-DD
+      if (startDate && logDate < startDate) matchesDate = false;
+      if (endDate && logDate > endDate) matchesDate = false;
+    }
+
+    return matchesSearch && matchesAction && matchesDate;
   });
 
   const exportPDF = async () => {
     setExporting("PDF");
     try {
-      const jsPDFModule = await import("jspdf");
-      const jsPDF = jsPDFModule.default;
-      await import("jspdf-autotable");
-      
+      applyPlugin(jsPDF);
       const doc = new jsPDF();
       
       // Header Banner
@@ -162,7 +170,7 @@ export default function AuditPage() {
         ];
       });
 
-      (doc as any).autoTable({
+      autoTable(doc, {
         startY: 48,
         head: [headers],
         body: tableData,
@@ -314,6 +322,32 @@ export default function AuditPage() {
               <option value="export_pdf">Génération PDF</option>
               <option value="export_xlsx">Génération Excel</option>
             </select>
+
+            <div className="flex items-center gap-2 bg-[#FAF3E0]/30 px-3 py-2 rounded-2xl border border-[#E8DCC4]">
+              <span className="text-[10px] font-bold text-[#B89E7E] uppercase">Du</span>
+              <input 
+                type="date" 
+                value={startDate} 
+                onChange={(e) => setStartDate(e.target.value)}
+                className="bg-transparent text-xs font-bold text-[#5C3D2E] outline-none cursor-pointer"
+              />
+              <span className="text-[10px] font-bold text-[#B89E7E] uppercase">Au</span>
+              <input 
+                type="date" 
+                value={endDate} 
+                onChange={(e) => setEndDate(e.target.value)}
+                className="bg-transparent text-xs font-bold text-[#5C3D2E] outline-none cursor-pointer"
+              />
+              {(startDate || endDate) && (
+                <button 
+                  onClick={() => { setStartDate(""); setEndDate(""); }}
+                  className="text-xs font-bold text-red-600 hover:text-red-800 ml-1"
+                >
+                  Effacer
+                </button>
+              )}
+            </div>
+
             <p className="text-xs font-bold text-[#B89E7E] ml-2">{filteredLogs.length} ligne(s)</p>
           </div>
         </div>

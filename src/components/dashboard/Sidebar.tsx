@@ -15,7 +15,8 @@ import {
   ShieldCheck,
   ChevronRight,
   Gift,
-  X
+  X,
+  Layers
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { auth } from "@/lib/firebase/config";
@@ -25,6 +26,7 @@ import { useGSAP } from "@gsap/react";
 
 const MENU_ITEMS = [
   { icon: LayoutDashboard, label: "Vue d'ensemble", href: "/dashboard" },
+  { icon: Layers, label: "Pipeline Visuel", href: "/dashboard/pipeline" },
   { icon: History, label: "Saisies de Vente", href: "/dashboard/entries" },
   { icon: Building2, label: "Entreprises", href: "/dashboard/companies" },
   { icon: Users, label: "Forces de Vente", href: "/dashboard/users" },

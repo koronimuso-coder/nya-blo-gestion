@@ -168,6 +168,16 @@ export default function ParrainagePage() {
   const [bulkActionOpen, setBulkActionOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   
+  // Wave 2 States
+  const [theme, setTheme] = useState<"chocolat" | "safran" | "sombre">("chocolat");
+  const [targetReferralCount, setTargetReferralCount] = useState(5);
+  const [qrColor, setQrColor] = useState("5c3d2e");
+  const [smsFilleulName, setSmsFilleulName] = useState("Kader");
+  const [smsProgression, setSmsProgression] = useState("3");
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [backupSchedule, setBackupSchedule] = useState("weekly");
+  const [backupEmail, setBackupEmail] = useState("direction@galf.ci");
+  
   // Simulator State (ROI Simulator)
   const [simParrains, setSimParrains] = useState(25);
   const [simFilleulsPerParrain, setSimFilleulsPerParrain] = useState(4);
@@ -216,6 +226,77 @@ export default function ParrainagePage() {
     centerId: "",
     notes: ""
   });
+
+  // Load Theme & Seuil
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("nya-blo-referral-theme") as any;
+    if (savedTheme && ["chocolat", "safran", "sombre"].includes(savedTheme)) {
+      setTheme(savedTheme);
+    }
+    const savedThreshold = localStorage.getItem("nya-blo-referral-threshold");
+    if (savedThreshold) {
+      setTargetReferralCount(Number(savedThreshold));
+    }
+    const savedSchedule = localStorage.getItem("nya-blo-referral-backup-schedule");
+    if (savedSchedule) {
+      setBackupSchedule(savedSchedule);
+    }
+    const savedEmail = localStorage.getItem("nya-blo-referral-backup-email");
+    if (savedEmail) {
+      setBackupEmail(savedEmail);
+    }
+  }, []);
+
+  const changeTheme = (newTheme: "chocolat" | "safran" | "sombre") => {
+    setTheme(newTheme);
+    localStorage.setItem("nya-blo-referral-theme", newTheme);
+  };
+
+  const t = useMemo(() => {
+    if (theme === "safran") {
+      return {
+        bg: "bg-[#FDF6E2]",
+        cardBg: "bg-white",
+        border: "border-[#F5E6C4]",
+        text: "text-[#451A03]",
+        textLight: "text-[#D97706]",
+        primary: "bg-[#B45309]",
+        primaryHover: "hover:bg-[#D97706]",
+        primaryText: "text-[#B45309]",
+        accent: "bg-[#F59E0B]",
+        headerBg: "bg-[#78350F]",
+        tagBg: "bg-[#FEF3C7]"
+      };
+    } else if (theme === "sombre") {
+      return {
+        bg: "bg-[#121212]",
+        cardBg: "bg-[#1E1E1E]",
+        border: "border-[#2D2D2D]",
+        text: "text-[#FAF3E0]",
+        textLight: "text-[#B89E7E]",
+        primary: "bg-[#D4AF37]",
+        primaryHover: "hover:bg-[#F3E5AB] hover:text-[#121212]",
+        primaryText: "text-[#D4AF37]",
+        accent: "bg-[#A66037]",
+        headerBg: "bg-[#1E1E1E]",
+        tagBg: "bg-[#2D2D2D]"
+      };
+    } else { // chocolat
+      return {
+        bg: "bg-[#FAF3E0]",
+        cardBg: "bg-white",
+        border: "border-[#E8DCC4]",
+        text: "text-[#2D1A12]",
+        textLight: "text-[#B89E7E]",
+        primary: "bg-[#5C3D2E]",
+        primaryHover: "hover:bg-[#A66037]",
+        primaryText: "text-[#5C3D2E]",
+        accent: "bg-[#D4AF37]",
+        headerBg: "bg-[#5C3D2E]",
+        tagBg: "bg-[#FAF3E0]"
+      };
+    }
+  }, [theme]);
 
   // Real-time Firestore Sync
   useEffect(() => {
@@ -406,6 +487,36 @@ export default function ParrainagePage() {
     };
   }, [attributions, members, rewards, campaigns]);
 
+  const campaignEfficiencyData = useMemo(() => {
+    return campaigns.map(c => {
+      const campAttributions = attributions.filter(a => a.campaignId === c.id);
+      const total = campAttributions.length;
+      const validated = campAttributions.filter(a => ["Confirmé", "inscription validée"].includes(a.status)).length;
+      return {
+        name: c.name,
+        Inscriptions: total,
+        Validées: validated
+      };
+    });
+  }, [campaigns, attributions]);
+
+  const avgConversionTimeDays = useMemo(() => {
+    let totalDays = 0;
+    let count = 0;
+    rewards.forEach(r => {
+      const m = members.find(member => member.id === r.memberId);
+      if (m && m.createdAt && r.createdAt) {
+        const diffMs = new Date(r.createdAt).getTime() - new Date(m.createdAt).getTime();
+        const diffDays = diffMs / (1000 * 60 * 60 * 24);
+        if (diffDays > 0) {
+          totalDays += diffDays;
+          count++;
+        }
+      }
+    });
+    return count > 0 ? Math.round(totalDays / count) : 12; // average 12 days fallback
+  }, [rewards, members]);
+
   // Team performance stats
   const teamPerformance = useMemo(() => {
     const repMap: Record<string, { name: string; email: string; totalReferred: number; validatedCount: number; conversionRate: number }> = {};
@@ -475,6 +586,18 @@ export default function ParrainagePage() {
             risk: "elevé",
             detail: `L'apprenant ${attr.studentName} semble s'auto-parrainer avec son propre numéro.`,
             evidence: `Parrain: ${parrain.prenom} ${parrain.nom} (${parrain.telephoneNormalise}) | Filleul: ${attr.studentName} (${attr.studentPhone})`,
+            timestamp: attr.createdAt,
+            rawItem: attr
+          });
+        }
+        
+        // Homonymy check
+        if (parrain.nom && attr.studentName && parrain.nom.toLowerCase().trim() === attr.studentName.split(/\s+/).pop()?.toLowerCase().trim()) {
+          list.push({
+            type: "Homonymie suspectée",
+            risk: "moyen",
+            detail: `L'apprenant ${attr.studentName} a le même nom de famille que son parrain ${parrain.prenom} ${parrain.nom}.`,
+            evidence: `Parrain: ${parrain.nom} | Filleul: ${attr.studentName}`,
             timestamp: attr.createdAt,
             rawItem: attr
           });
@@ -689,6 +812,14 @@ export default function ParrainagePage() {
     }
   };
 
+  const handleSaveConfig = () => {
+    localStorage.setItem("nya-blo-referral-threshold", String(targetReferralCount));
+    localStorage.setItem("nya-blo-referral-backup-schedule", backupSchedule);
+    localStorage.setItem("nya-blo-referral-backup-email", backupEmail);
+    setConfigOpen(false);
+    toast.success("Paramètres et seuil de parrainage enregistrés !");
+  };
+
   // Bulk process rewards
   const handleBulkProcessRewards = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -839,7 +970,7 @@ export default function ParrainagePage() {
   };
 
   // Export functions
-  const handleExportCSV = (type: "members" | "rewards" | "attributions") => {
+  const handleExportCSV = (type: "members" | "rewards" | "attributions" | "logs" | "campaigns_bilan") => {
     let headers: string[] = [];
     let rows: any[] = [];
     let filename = "";
@@ -852,6 +983,21 @@ export default function ParrainagePage() {
       headers = ["Référence", "Parrain ID", "Filleuls qualifiants", "Statut", "Formation offerte", "Centre", "Approuvé par", "Date décision"];
       rows = rewards.map(r => [r.reference, r.memberId, r.qualifyingCount, r.status, r.trainingId || "N/A", r.centerId || "N/A", r.approvedBy || "N/A", r.approvedAt || "N/A"]);
       filename = "export_recompenses.csv";
+    } else if (type === "logs") {
+      headers = ["Horodatage", "Utilisateur", "Action", "Détails"];
+      rows = auditLogs.map(l => [new Date(l.timestamp).toLocaleString("fr-FR"), l.userEmail, l.action, l.details]);
+      filename = "export_logs_audit.csv";
+    } else if (type === "campaigns_bilan") {
+      headers = ["Campagne ID", "Nom", "Description", "Date début", "Date fin", "Total Parrains", "Filleuls Enregistrés", "Filleuls Validés", "Taux Conversion (%)"];
+      rows = campaigns.map(c => {
+        const campMembers = members.filter(m => m.campagneId === c.id);
+        const campAttrs = attributions.filter(a => a.campaignId === c.id);
+        const total = campAttrs.length;
+        const validated = campAttrs.filter(a => ["Confirmé", "inscription validée"].includes(a.status)).length;
+        const rate = total > 0 ? Math.round((validated / total) * 100) : 0;
+        return [c.id, c.name, c.description, c.startDate, c.endDate, campMembers.length, total, validated, `${rate}%`];
+      });
+      filename = "bilan_campagnes_parrainage.csv";
     } else {
       headers = ["Date", "Apprenant", "Téléphone", "Code utilisé", "Parrain ID", "Campagne", "Commerciale", "Statut"];
       rows = attributions.map(a => [a.createdAt, a.studentName, a.studentPhone, a.referralCodeId, a.referralMemberId, a.campaignId, a.recordedByName, a.status]);
@@ -869,6 +1015,152 @@ export default function ParrainagePage() {
     link.click();
     document.body.removeChild(link);
     toast.success("CSV exporté avec succès !");
+  };
+
+  const handleExportAuditLogsJSON = () => {
+    const jsonContent = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(auditLogs, null, 2));
+    const link = document.createElement("a");
+    link.setAttribute("href", jsonContent);
+    link.setAttribute("download", "journal_audit_parrainage.json");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Journal d'audit exporté en JSON !");
+  };
+
+  const handleExportLeaderboardPDF = () => {
+    const docPdf = new jsPDF();
+    docPdf.setFillColor(92, 61, 46);
+    docPdf.rect(0, 0, 210, 15, "F");
+    
+    docPdf.setTextColor(92, 61, 46);
+    docPdf.setFont("helvetica", "bold");
+    docPdf.setFontSize(20);
+    docPdf.text("GALF FORMATION", 105, 30, { align: "center" });
+    docPdf.setFontSize(12);
+    docPdf.text("CLASSEMENT DES MEILLEURS AMBASSADEURS", 105, 40, { align: "center" });
+    
+    docPdf.setDrawColor(230, 230, 230);
+    docPdf.line(20, 48, 190, 48);
+    
+    docPdf.setFontSize(10);
+    docPdf.setTextColor(50, 50, 50);
+    docPdf.text("Rang", 25, 58);
+    docPdf.text("Ambassadeur", 55, 58);
+    docPdf.text("Code unique", 100, 58);
+    docPdf.text("Filleuls Validés", 140, 58);
+    docPdf.text("Statut", 170, 58);
+    
+    docPdf.line(20, 62, 190, 62);
+    
+    ambassadorLeaderboard.forEach((m, idx) => {
+      const y = 72 + idx * 12;
+      docPdf.setFont("helvetica", "normal");
+      docPdf.text(`#${idx + 1}`, 25, y);
+      docPdf.setFont("helvetica", "bold");
+      docPdf.text(`${m.prenom} ${m.nom}`, 55, y);
+      docPdf.setFont("monospace", "normal");
+      docPdf.text(m.codeId, 100, y);
+      docPdf.setFont("helvetica", "bold");
+      docPdf.text(`${m.stats?.validatedCount || 0} validés`, 140, y);
+      docPdf.setFont("helvetica", "normal");
+      docPdf.text(m.status.toUpperCase(), 170, y);
+    });
+    
+    docPdf.save("leaderboard_ambassadeurs.pdf");
+    toast.success("Leaderboard PDF généré !");
+  };
+
+  const generateFlyerPDF = (member: ReferralMember) => {
+    const docPdf = new jsPDF("p", "mm", "a4");
+    
+    // Background color
+    docPdf.setFillColor(250, 243, 224); // Cream/Beige
+    docPdf.rect(0, 0, 210, 297, "F");
+    
+    // Header banner
+    docPdf.setFillColor(92, 61, 46);
+    docPdf.rect(0, 0, 210, 45, "F");
+    
+    docPdf.setTextColor(245, 230, 200);
+    docPdf.setFont("helvetica", "bold");
+    docPdf.setFontSize(26);
+    docPdf.text("GALF FORMATION", 105, 20, { align: "center" });
+    docPdf.setFontSize(10);
+    docPdf.text("DEVIENS AMBASSADEUR - GAGNE DES FORMATIONS OFFERTES", 105, 32, { align: "center" });
+    
+    // Content body
+    docPdf.setTextColor(92, 61, 46);
+    docPdf.setFontSize(18);
+    docPdf.text("SOUTIENS TES PROCHES DANS LEUR AVENIR !", 105, 70, { align: "center" });
+    
+    docPdf.setFontSize(11);
+    docPdf.setTextColor(50, 50, 50);
+    docPdf.text("Partage ton code parrain unique avec ton entourage.", 105, 85, { align: "center" });
+    docPdf.text(`Chaque inscription validée te rapproche d'une formation gratuite en ${member.formationSouhaitee || "HSE/Engins"}.`, 105, 92, { align: "center" });
+    
+    // Big Badge Code
+    docPdf.setFillColor(232, 220, 196);
+    docPdf.roundedRect(35, 110, 140, 55, 6, 6, "F");
+    
+    docPdf.setTextColor(92, 61, 46);
+    docPdf.setFontSize(11);
+    docPdf.text("CODE PARRAIN D'AMBASSADEUR :", 105, 125, { align: "center" });
+    docPdf.setFontSize(28);
+    docPdf.setFont("monospace", "bold");
+    docPdf.text(member.codeId, 105, 148, { align: "center" });
+    
+    // QR Code visual box
+    docPdf.setFont("helvetica", "bold");
+    docPdf.setFontSize(13);
+    docPdf.text("SCANNE CE CODE POUR T'INSCRIRE DIRECTEMENT :", 105, 190, { align: "center" });
+    
+    // Image placeholder border
+    docPdf.setDrawColor(92, 61, 46);
+    docPdf.setLineWidth(1);
+    docPdf.rect(80, 205, 50, 50);
+    
+    docPdf.setFontSize(8);
+    docPdf.setFont("helvetica", "italic");
+    docPdf.setTextColor(120, 120, 120);
+    docPdf.text("Scannez le QR Code ci-dessus pour accéder au formulaire d'affiliation.", 105, 265, { align: "center" });
+    docPdf.text("GALF Formation SARL - Abidjan, Côte d'Ivoire", 105, 285, { align: "center" });
+    
+    docPdf.save(`FLYER_PROMO_${member.codeId}.pdf`);
+    toast.success("Flyer promotionnel PDF généré !");
+  };
+
+  const renderStatusTimeline = (status: string) => {
+    const steps = [
+      { key: "prospect enregistré", label: "Saisi" },
+      { key: "inscription en attente", label: "En attente" },
+      { key: "paiement partiel", label: "Partiel" },
+      { key: "inscription validée", label: "Validé" }
+    ];
+    
+    let activeIdx = 0;
+    if (status === "inscription en attente" || status === "En attente") activeIdx = 1;
+    else if (status === "paiement partiel" || status === "paiement à vérifier") activeIdx = 2;
+    else if (status === "inscription validée" || status === "Confirmé") activeIdx = 3;
+    
+    return (
+      <div className="flex items-center gap-1 mt-1 shrink-0">
+        {steps.map((step, idx) => {
+          const isDone = idx <= activeIdx;
+          return (
+            <React.Fragment key={step.key}>
+              <div className="flex items-center gap-0.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${isDone ? "bg-emerald-500" : "bg-gray-300"}`} />
+                <span className={`text-[8px] font-bold ${isDone ? "text-emerald-700" : "text-gray-400"}`}>
+                  {step.label}
+                </span>
+              </div>
+              {idx < steps.length - 1 && <span className="text-[8px] text-gray-300">›</span>}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    );
   };
 
   // Toggle Bulk Selection
@@ -897,16 +1189,39 @@ export default function ParrainagePage() {
   }
 
   return (
-    <div className="space-y-8 pb-12 relative text-[#2D1A12]">
+    <div className={`space-y-8 p-8 pb-12 relative rounded-[32px] transition-colors duration-300 ${t.bg} ${t.text}`}>
       <div className="absolute inset-0 dogon-pattern opacity-5 pointer-events-none" />
 
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
         <div>
           <h1 className="text-3xl font-bold text-[#5C3D2E] font-dogon uppercase tracking-tight">Programme de Parrainage</h1>
-          <p className="text-[#B89E7E] mt-1">Gérez le programme commercial : « 5 inscriptions validées = 1 formation offerte ».</p>
+          <p className="text-[#B89E7E] mt-1">Gérez le programme commercial : « {targetReferralCount} inscriptions validées = 1 formation offerte ».</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1 p-1 bg-white border border-[#E8DCC4] rounded-xl shadow-sm">
+            <button 
+              type="button"
+              onClick={() => changeTheme("chocolat")}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${theme === "chocolat" ? "bg-[#5C3D2E] text-white" : "text-[#5C3D2E] bg-transparent"}`}
+            >
+              Choc
+            </button>
+            <button 
+              type="button"
+              onClick={() => changeTheme("safran")}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${theme === "safran" ? "bg-[#B45309] text-white" : "text-[#B45309] bg-transparent"}`}
+            >
+              Safran
+            </button>
+            <button 
+              type="button"
+              onClick={() => changeTheme("sombre")}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${theme === "sombre" ? "bg-[#D4AF37] text-[#121212]" : "text-gray-400 bg-transparent"}`}
+            >
+              Sombre
+            </button>
+          </div>
           <button 
             onClick={() => setCheckerOpen(true)}
             className="flex items-center gap-2 px-5 py-3.5 bg-white border border-[#E8DCC4] hover:bg-[#FAF3E0] text-[#5C3D2E] rounded-2xl text-sm font-bold transition-all shadow-md cursor-pointer"
@@ -998,7 +1313,8 @@ export default function ParrainagePage() {
           { id: "campaigns", label: "Campagnes", icon: Calendar },
           { id: "performance", label: "Suivi Équipe", icon: BarChart3 },
           { id: "stats", label: "Graphiques & Simulation", icon: BarChart3 },
-          { id: "logs", label: "Journal d'Audit", icon: Activity }
+          { id: "logs", label: "Journal d'Audit", icon: Activity },
+          { id: "help", label: "Centre d'aide", icon: HelpCircle }
         ].map(tab => {
           const isActive = activeTab === tab.id;
           return (
@@ -1073,7 +1389,7 @@ export default function ParrainagePage() {
                 {processedMembers.map(m => {
                   const valCount = m.stats?.validatedCount || 0;
                   const totalCount = m.stats?.totalReferred || 0;
-                  const progressPct = Math.min((valCount / 5) * 100, 100);
+                  const progressPct = Math.min((valCount / targetReferralCount) * 100, 100);
 
                   return (
                     <tr key={m.id} className="hover:bg-[#FAF3E0]/30 transition-colors">
@@ -1083,11 +1399,16 @@ export default function ParrainagePage() {
                       <td className="px-8 py-5 text-xs text-[#A66037] font-bold">{campaigns.find(c => c.id === m.campagneId)?.name || m.campagneId}</td>
                       <td className="px-8 py-5 font-bold">{valCount} / {totalCount}</td>
                       <td className="px-8 py-5">
-                        <div className="flex items-center gap-2">
-                           <div className="w-24 h-2 bg-[#FAF3E0] border border-[#E8DCC4] rounded-full overflow-hidden">
-                              <div className="h-full bg-[#D4AF37] transition-all" style={{ width: `${progressPct}%` }} />
+                        <div className="flex flex-col gap-1">
+                           <div className="flex justify-between text-[10px] font-bold text-[#A66037]">
+                             <span>{valCount * 100} / {targetReferralCount * 100} pts</span>
                            </div>
-                           <span className="text-[10px] font-bold text-[#A66037]">{valCount}/5</span>
+                           <div className="flex items-center gap-2">
+                             <div className="w-20 h-2 bg-[#FAF3E0] border border-[#E8DCC4] rounded-full overflow-hidden">
+                                <div className="h-full bg-[#D4AF37] transition-all" style={{ width: `${progressPct}%` }} />
+                             </div>
+                             <span className="text-[9px] font-bold text-[#A66037]">{valCount}/{targetReferralCount}</span>
+                           </div>
                         </div>
                       </td>
                       <td className="px-8 py-5">
@@ -1233,6 +1554,13 @@ export default function ParrainagePage() {
               <p className="text-xs text-[#B89E7E] mt-0.5">Validez l&apos;attribution de la formation offerte aux parrains ayant atteint 5 filleuls validés.</p>
             </div>
             <div className="flex items-center gap-3">
+              <button 
+                type="button"
+                onClick={() => setCatalogOpen(true)}
+                className="px-4 py-2 bg-white hover:bg-[#FAF3E0] text-[#5C3D2E] border border-[#E8DCC4] rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+              >
+                <Gift className="w-4 h-4 text-[#A66037]" /> Catalogue Récompenses
+              </button>
               {bulkSelectRewards.length > 0 && (
                 <button 
                   onClick={() => setBulkActionOpen(true)}
@@ -1500,7 +1828,7 @@ export default function ParrainagePage() {
         <div className="space-y-8 relative z-10">
           
           {/* ROI KPI Financial Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="bg-white p-6 rounded-3xl border border-[#E8DCC4] shadow-sm">
               <p className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest">Valeur Générée par le Parrainage</p>
               <h3 className="text-2xl font-black font-dogon text-emerald-600 mt-1">{statsSummary.estimatedValueGenerated.toLocaleString()} FCFA</h3>
@@ -1518,9 +1846,14 @@ export default function ParrainagePage() {
               </h3>
               <p className="text-[10px] text-gray-400 mt-0.5">Taux de ROI de l&apos;opération : <span className="font-bold text-emerald-600">+{statsSummary.grossRoi}%</span></p>
             </div>
+            <div className="bg-white p-6 rounded-3xl border border-[#E8DCC4] shadow-sm">
+              <p className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest">Temps Moyen de Conversion</p>
+              <h3 className="text-2xl font-black font-dogon text-amber-600 mt-1">~ {avgConversionTimeDays} Jours</h3>
+              <p className="text-[10px] text-gray-400 mt-0.5">Délai moyen pour atteindre {targetReferralCount} filleuls validés.</p>
+            </div>
           </div>
 
-          <div className="bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] grid grid-cols-1 md:grid-cols-4 gap-6">
              <div className="p-6 bg-[#FAF3E0]/20 border border-[#E8DCC4] rounded-2xl flex flex-col justify-between">
                 <div>
                    <h4 className="font-bold text-sm text-[#5C3D2E] uppercase tracking-wider mb-2">Base Parrains</h4>
@@ -1557,6 +1890,18 @@ export default function ParrainagePage() {
                    <Download className="w-4 h-4" /> Export CSV Récompenses
                 </button>
              </div>
+             <div className="p-6 bg-[#FAF3E0]/20 border border-[#E8DCC4] rounded-2xl flex flex-col justify-between">
+                <div>
+                   <h4 className="font-bold text-sm text-[#5C3D2E] uppercase tracking-wider mb-2">Bilan Campagnes</h4>
+                   <p className="text-xs text-[#B89E7E]">Téléchargez les données comparatives de toutes les campagnes.</p>
+                </div>
+                <button 
+                  onClick={() => handleExportCSV("campaigns_bilan")}
+                  className="mt-6 flex items-center justify-center gap-2 w-full py-3 bg-[#5C3D2E] text-white font-bold text-xs rounded-xl hover:bg-[#A66037] transition-all cursor-pointer shadow-md"
+                >
+                   <Download className="w-4 h-4" /> Export Bilan Campagnes
+                </button>
+             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -1580,29 +1925,21 @@ export default function ParrainagePage() {
                 </div>
              </div>
 
-             {/* Répartition par Campagne */}
+             {/* Comparatif d'Efficacité des Campagnes */}
              <div className="bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4]">
-                <h3 className="font-bold text-lg text-primary font-dogon mb-6">Répartition par Campagne</h3>
-                <div className="h-[260px] w-full flex items-center justify-center">
-                   {statsSummary.chartCampaignData.length > 0 ? (
+                <h3 className="font-bold text-lg text-primary font-dogon mb-6">Comparatif d&apos;Efficacité des Campagnes</h3>
+                <div className="h-[260px] w-full">
+                   {campaignEfficiencyData.length > 0 ? (
                       <ResponsiveContainer width="100%" height="100%">
-                         <PieChart>
-                            <Pie
-                                data={statsSummary.chartCampaignData}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={50}
-                                outerRadius={80}
-                                paddingAngle={5}
-                                dataKey="value"
-                            >
-                               {statsSummary.chartCampaignData.map((_, index) => (
-                                  <Cell key={`cell-${index}`} fill={["#5C3D2E", "#A66037", "#D4AF37", "#059669"][index % 4]} />
-                               ))}
-                            </Pie>
-                            <Tooltip />
+                         <BarChart data={campaignEfficiencyData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#E8DCC460" />
+                            <XAxis dataKey="name" fontSize={10} />
+                            <YAxis fontSize={10} />
+                            <Tooltip contentStyle={{ borderRadius: "12px" }} />
                             <Legend />
-                         </PieChart>
+                            <Bar dataKey="Inscriptions" fill="#B89E7E" name="Inscrits" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="Validées" fill="#059669" name="Validés" radius={[4, 4, 0, 0]} />
+                         </BarChart>
                       </ResponsiveContainer>
                    ) : (
                       <p className="h-full flex items-center justify-center text-xs text-[#B89E7E] italic">Aucune donnée disponible.</p>
@@ -1614,9 +1951,17 @@ export default function ParrainagePage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Leaderboard panel */}
             <div className="bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] space-y-6">
-              <div>
-                <h3 className="font-bold text-lg text-[#5C3D2E] font-dogon">Classement des Ambassadeurs (Parrains)</h3>
-                <p className="text-xs text-[#B89E7E] mt-0.5">Top parrains ayant obtenu le plus de filleuls validés.</p>
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-lg text-[#5C3D2E] font-dogon">Classement des Ambassadeurs (Parrains)</h3>
+                  <p className="text-xs text-[#B89E7E] mt-0.5">Top parrains ayant obtenu le plus de filleuls validés.</p>
+                </div>
+                <button 
+                  onClick={handleExportLeaderboardPDF}
+                  className="px-3 py-2 bg-[#5C3D2E] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 hover:bg-[#A66037] transition-all shadow-md"
+                >
+                  <FileText className="w-3.5 h-3.5" /> PDF
+                </button>
               </div>
               <div className="space-y-3">
                 {ambassadorLeaderboard.map((m, idx) => {
@@ -1785,6 +2130,120 @@ export default function ParrainagePage() {
         </div>
       )}
 
+      {/* TAB: CENTRE D'AIDE ET SUPPORT COMMERCIAL (NEW WAVE 2 FEATURE) */}
+      {activeTab === "help" && (
+        <div className="bg-white rounded-[40px] shadow-premium border border-[#E8DCC4] p-8 space-y-8 relative z-10 text-sm">
+          <div className="border-b border-[#E8DCC4]/30 pb-4">
+            <h3 className="text-xl font-bold text-[#5C3D2E] font-dogon uppercase tracking-tight flex items-center gap-2">
+              <HelpCircle className="w-5 h-5 text-[#A66037]" />
+              Centre d&apos;aide & Support Commercial
+            </h3>
+            <p className="text-xs text-[#B89E7E] mt-1">Guide et procédures d&apos;utilisation du module de parrainage de NYA BLO.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="space-y-6">
+              <h4 className="font-bold text-[#5C3D2E] font-dogon uppercase text-xs tracking-wider flex items-center gap-1.5">
+                <Bookmark className="w-4 h-4 text-[#A66037]" />
+                Manuel Commercial et Guide Pas-à-Pas
+              </h4>
+
+              <div className="space-y-4">
+                {[
+                  {
+                    step: "1",
+                    title: "Enregistrer un nouveau Parrain",
+                    desc: "Allez sur l'onglet 'Membres & Codes' et cliquez sur 'Enregistrer un Parrain'. Saisissez ses informations et le code parrain qu'il souhaite (ex: MAMADOU26). Un code unique lui sera alors attribué."
+                  },
+                  {
+                    step: "2",
+                    title: "Utiliser un code lors de l'inscription",
+                    desc: "Lors de la saisie d'une inscription sur le site de gestion (GALF), la commerciale renseigne le code parrain de l'apprenant dans le champ correspondant. L'inscription est alors liée au parrain."
+                  },
+                  {
+                    step: "3",
+                    title: "Progression et système de points",
+                    desc: "Chaque inscription rattachée et validée (Paiement validé) rapporte 100 points au parrain. Avec 5 filleuls validés (500 pts), le parrain débloque une formation offerte."
+                  },
+                  {
+                    step: "4",
+                    title: "Valider une récompense",
+                    desc: "Dès qu'un parrain atteint le seuil (ex: 5 filleuls), un dossier de récompense est créé dans 'Contrôle des Récompenses'. La direction ou le superviseur valide le dossier et génère le Bon PDF officiel."
+                  }
+                ].map((item, idx) => (
+                  <div key={idx} className="flex gap-4 p-4 bg-[#FAF3E0]/20 rounded-2xl border border-[#E8DCC4]/30">
+                    <div className="w-8 h-8 rounded-full bg-[#5C3D2E] text-white flex items-center justify-center font-bold text-xs shrink-0">
+                      {item.step}
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-xs text-[#5C3D2E]">{item.title}</h5>
+                      <p className="text-xs text-gray-600 mt-1 leading-relaxed">{item.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <h4 className="font-bold text-[#5C3D2E] font-dogon uppercase text-xs tracking-wider flex items-center gap-1.5">
+                <Info className="w-4 h-4 text-[#A66037]" />
+                Foire aux Questions (FAQ) Commerciale
+              </h4>
+
+              <div className="space-y-4">
+                {[
+                  {
+                    q: "Comment fonctionne la double devise (Points / Filleuls) ?",
+                    a: "Pour simplifier la communication, 1 filleul validé correspond à 100 points de commission. Les récompenses intermédiaires ou finales s'évaluent en points (ex: 500 points requis pour une formation HSE)."
+                  },
+                  {
+                    q: "Que faire en cas d'alerte de fraude ou d'homonymie ?",
+                    a: "L'onglet 'Anti-Fraude & Doublons' liste les dossiers suspects (même numéro de téléphone, auto-parrainage, même nom de famille). Les administrateurs peuvent étudier le dossier et forcer la validation (Whitelist/Clear) en indiquant un motif."
+                  },
+                  {
+                    q: "Comment partager le code unique ou imprimer un flyer ?",
+                    a: "Dans l'onglet 'Membres & Codes', cliquez sur 'Consulter' sur la ligne du parrain. Vous pourrez copier son lien d'affiliation unique, personnaliser la couleur du QR code, et générer un flyer promotionnel A4 officiel au format PDF."
+                  },
+                  {
+                    q: "Comment modifier le seuil de parrainage ?",
+                    a: "Cliquez sur l'icône d'engrenage (paramètres) à côté du titre de l'onglet 'Anti-Fraude' pour modifier le seuil requis (3, 4 ou 5 filleuls) ainsi que la fréquence des sauvegardes."
+                  }
+                ].map((item, idx) => (
+                  <div key={idx} className="p-4 bg-white border border-[#E8DCC4]/40 rounded-2xl space-y-2">
+                    <h5 className="font-bold text-xs text-[#5C3D2E] flex items-start gap-1.5">
+                      <HelpCircle className="w-4 h-4 text-[#A66037] shrink-0 mt-0.5" />
+                      {item.q}
+                    </h5>
+                    <p className="text-xs text-gray-500 leading-relaxed pl-5">{item.a}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Simulated Backup Actions */}
+              <div className="p-5 bg-[#FAF3E0]/30 rounded-3xl border border-[#E8DCC4] space-y-4">
+                <div>
+                  <h5 className="font-bold text-xs text-[#5C3D2E] uppercase">Sauvegardes et Exports Automatisés</h5>
+                  <p className="text-[10px] text-gray-500 mt-1">Le système planifie des exports réguliers du bilan à l&apos;adresse de la direction : <strong>{backupEmail}</strong> (Fréquence : {backupSchedule === "daily" ? "Quotidien" : backupSchedule === "weekly" ? "Hebdomadaire" : "Mensuel"}).</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const loadingToast = toast.loading("Génération de l'export de sauvegarde...");
+                    setTimeout(() => {
+                      toast.dismiss(loadingToast);
+                      toast.success(`Sauvegarde simulée envoyée à ${backupEmail} !`);
+                    }, 1500);
+                  }}
+                  className="px-4 py-2 bg-[#5C3D2E] text-white rounded-xl text-xs font-bold hover:bg-[#A66037] transition-all cursor-pointer shadow-sm w-full"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 inline mr-2 animate-spin-slow" /> Lancer une sauvegarde manuelle instantanée
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: PARRAIN DETAILS */}
       {parrainDetailsOpen && selectedParrain && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm">
@@ -1834,29 +2293,99 @@ export default function ParrainagePage() {
                        
                        {/* Interactive API QR Generator */}
                        <img 
-                         src={`https://api.qrserver.com/v1/create-qr-code/?size=60x60&color=5c3d2e&bgcolor=faf3e0&data=https://galf.ci/inscription?ref=${selectedParrain.codeId}`}
+                         src={`https://api.qrserver.com/v1/create-qr-code/?size=60x60&color=${qrColor}&bgcolor=faf3e0&data=https://galf.ci/inscription?ref=${selectedParrain.codeId}`}
                          alt="QR Code Parrain"
                          className="w-12 h-12 bg-white p-1 rounded"
                        />
                      </div>
                    </div>
 
-                   <div className="flex gap-2">
-                     <button 
-                       onClick={() => {
-                         navigator.clipboard.writeText(`https://galf.ci/inscription?ref=${selectedParrain.codeId}`);
-                         toast.success("Lien de parrainage copié !");
-                       }}
-                       className="px-4 py-2 bg-[#FAF3E0] hover:bg-[#E8DCC4]/30 border border-[#E8DCC4] text-[#5C3D2E] text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
-                     >
-                       <Copy className="w-3.5 h-3.5" /> Copier le lien
-                     </button>
+                   <div className="flex flex-col items-center gap-3 w-full">
+                     <div className="flex gap-2 justify-center w-full">
+                       <button 
+                         type="button"
+                         onClick={() => {
+                           navigator.clipboard.writeText(`https://galf.ci/inscription?ref=${selectedParrain.codeId}`);
+                           toast.success("Lien de parrainage copié !");
+                         }}
+                         className="px-4 py-2 bg-[#FAF3E0] hover:bg-[#E8DCC4]/30 border border-[#E8DCC4] text-[#5C3D2E] text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm"
+                       >
+                         <Copy className="w-3.5 h-3.5" /> Copier le lien
+                       </button>
+                       <button 
+                         type="button"
+                         onClick={() => generateFlyerPDF(selectedParrain)}
+                         className="px-4 py-2 bg-[#5C3D2E] text-white hover:bg-[#A66037] text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md"
+                       >
+                         <FileText className="w-3.5 h-3.5" /> Imprimer Flyer A4
+                       </button>
+                     </div>
+                     <div className="flex items-center gap-2">
+                       <span className="text-[10px] text-gray-500 font-bold">Couleur QR :</span>
+                       {[
+                         { hex: "5c3d2e", name: "Chocolat" },
+                         { hex: "059669", name: "Vert" },
+                         { hex: "d4af37", name: "Or" },
+                         { hex: "1d4ed8", name: "Bleu" }
+                       ].map(color => (
+                         <button 
+                           key={color.hex}
+                           type="button"
+                           onClick={() => setQrColor(color.hex)}
+                           className={`w-4 h-4 rounded-full border border-gray-300 ${qrColor === color.hex ? "ring-2 ring-offset-1 ring-amber-500" : ""}`}
+                           style={{ backgroundColor: `#${color.hex}` }}
+                           title={color.name}
+                         />
+                       ))}
+                     </div>
                    </div>
                  </div>
 
                  {/* WhatsApp / SMS Templates Panel (New Feature) */}
                  <div className="space-y-3">
-                   <h4 className="text-xs font-bold text-[#A66037] uppercase tracking-widest">Modèles de Partage</h4>
+                   <h4 className="text-xs font-bold text-[#A66037] uppercase tracking-widest">Modèles de Partage & Simulateur</h4>
+                   
+                   <div className="p-4 bg-white border border-[#E8DCC4]/45 rounded-2xl space-y-2 text-xs">
+                     <span className="text-[10px] font-bold text-[#5C3D2E] block uppercase">Simulateur de Message Commercial</span>
+                     <div className="grid grid-cols-2 gap-2">
+                       <input 
+                         type="text" 
+                         placeholder="Nom du filleul" 
+                         value={smsFilleulName} 
+                         onChange={e => setSmsFilleulName(e.target.value)} 
+                         className="px-2 py-1.5 border border-[#E8DCC4] rounded-lg text-[10px] bg-transparent font-medium"
+                       />
+                       <select 
+                         value={smsProgression} 
+                         onChange={e => setSmsProgression(e.target.value)} 
+                         className="px-2 py-1.5 border border-[#E8DCC4] rounded-lg text-[10px] bg-transparent font-bold"
+                       >
+                         <option value="1">1 / {targetReferralCount} Validé</option>
+                         <option value="3">3 / {targetReferralCount} Validés</option>
+                         <option value="5">5 / {targetReferralCount} (Fini!)</option>
+                       </select>
+                     </div>
+                     
+                     {(() => {
+                       const smsText = `Félicitations ${selectedParrain.prenom} ! Ton parrainage pour ${smsFilleulName} a été validé. Tu as maintenant ${smsProgression} filleul(s) validé(s) sur ${targetReferralCount} (${Number(smsProgression) * 100} pts). Plus que ${targetReferralCount - Number(smsProgression)} pour ta formation offerte !`;
+                       return (
+                         <div className="space-y-1.5 pt-1">
+                           <p className="text-[10px] text-gray-500 italic bg-[#FAF3E0]/30 p-2.5 rounded-lg leading-relaxed">{smsText}</p>
+                           <button 
+                             type="button" 
+                             onClick={() => {
+                               navigator.clipboard.writeText(smsText);
+                               toast.success("Message simulé copié !");
+                             }}
+                             className="px-3 py-1.5 bg-[#5C3D2E] hover:bg-[#A66037] text-white rounded-lg text-[9px] font-bold flex items-center gap-1.5 cursor-pointer w-max shadow-sm"
+                           >
+                             <Copy className="w-3.5 h-3.5" /> Copier le message SMS
+                           </button>
+                         </div>
+                       );
+                     })()}
+                   </div>
+
                    <div className="space-y-2">
                      {[
                        { title: "Invitation WhatsApp/SMS", text: `Bonjour ! Rejoins-moi chez GALF Formation pour te former aux métiers d'avenir. Utilise mon code parrain "${selectedParrain.codeId}" lors de ton inscription : https://galf.ci/inscription?ref=${selectedParrain.codeId}` },
@@ -1866,11 +2395,12 @@ export default function ParrainagePage() {
                          <div className="flex justify-between items-center">
                            <span className="text-[10px] font-bold text-[#5C3D2E]">{t.title}</span>
                            <button 
+                             type="button"
                              onClick={() => {
                                navigator.clipboard.writeText(t.text);
                                toast.success("Modèle de message copié !");
                              }}
-                             className="p-1 hover:bg-[#FAF3E0] rounded text-[#A66037]"
+                             className="p-1 hover:bg-[#FAF3E0] rounded text-[#A66037] cursor-pointer"
                              title="Copier le texte"
                            >
                              <Copy className="w-3.5 h-3.5" />
@@ -1901,7 +2431,12 @@ export default function ParrainagePage() {
                                 const isCounted = ["Confirmé", "inscription validée"].includes(a.status);
                                 return (
                                    <tr key={a.id} className="hover:bg-[#FAF3E0]/10">
-                                      <td className="p-3 font-semibold">{a.studentName}</td>
+                                      <td className="p-3 font-semibold text-xs">
+                                        <div>
+                                          {a.studentName}
+                                          {renderStatusTimeline(a.status)}
+                                        </div>
+                                      </td>
                                       <td className="p-3 text-gray-500">{a.studentPhone}</td>
                                       <td className="p-3 text-gray-500">{new Date(a.createdAt).toLocaleDateString("fr-FR")}</td>
                                       <td className="p-3 font-bold">{a.status}</td>
@@ -2223,33 +2758,76 @@ export default function ParrainagePage() {
                    </div>
                  )}
 
-                 {checkerResult === "not_found" && (
-                   <p className="text-xs text-red-600 font-bold italic text-center py-4 bg-red-50 rounded-xl border border-red-100">
-                     Aucun parrain ou code trouvé pour cette saisie.
-                   </p>
-                 )}
+                  {checkerResult === "not_found" && (
+                    <p className="text-xs text-red-600 font-bold italic text-center py-4 bg-red-50 rounded-xl border border-red-100">
+                      Aucun parrain ou code trouvé pour cette saisie.
+                    </p>
+                  )}
               </div>
            </div>
         </div>
       )}
 
-      {/* MODAL: ANTI-FRAUD SETTINGS (NEW FEATURE) */}
+         {/* MODAL: ANTI-FRAUD & PROGRAM SETTINGS (NEW WAVE 2 FEATURE) */}
       {configOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm">
-           <div className="bg-[#FAF3E0] w-full max-w-md rounded-[40px] shadow-2xl border border-white/20 overflow-hidden flex flex-col">
+           <form onSubmit={(e) => { e.preventDefault(); handleSaveConfig(); }} className="bg-[#FAF3E0] w-full max-w-md rounded-[40px] shadow-2xl border border-white/20 overflow-hidden flex flex-col">
               <div className="bg-[#5C3D2E] p-6 text-[#FAF3E0] flex justify-between items-center relative shrink-0">
                  <div>
-                    <h3 className="text-xl font-bold font-dogon">Paramètres d&apos;Alertes</h3>
-                    <p className="text-[10px] text-[#D4AF37] uppercase font-bold tracking-widest mt-1">Configuration des seuils de sécurité</p>
+                    <h3 className="text-xl font-bold font-dogon">Paramètres Généraux</h3>
+                    <p className="text-[10px] text-[#D4AF37] uppercase font-bold tracking-widest mt-1">Seuils, Sécurité et Sauvegardes</p>
                  </div>
                  <button type="button" onClick={() => setConfigOpen(false)} className="p-2 bg-white/10 hover:bg-white/20 rounded-xl text-white">
                     <X className="w-5 h-5" />
                  </button>
               </div>
 
-              <div className="p-8 space-y-4 text-xs">
+              <div className="p-8 space-y-4 text-xs max-h-[70vh] overflow-y-auto custom-scrollbar">
+                 {/* Threshold config */}
+                 <div className="space-y-1.5">
+                   <label className="font-bold text-[#A66037] uppercase tracking-wider block">Seuil de Parrainage (Filleuls validés) *</label>
+                   <select 
+                     value={targetReferralCount}
+                     onChange={e => setTargetReferralCount(Number(e.target.value))}
+                     className="w-full px-3 py-2 bg-white border border-[#E8DCC4] rounded-xl font-bold"
+                   >
+                     <option value="3">3 Filleuls (Campagne Flash)</option>
+                     <option value="4">4 Filleuls</option>
+                     <option value="5">5 Filleuls (Standard)</option>
+                   </select>
+                   <p className="text-[9px] text-gray-400">Définit le nombre d&apos;inscriptions validées requis pour obtenir le Bon.</p>
+                 </div>
+
+                 {/* Backup configuration */}
+                 <div className="space-y-1.5">
+                   <label className="font-bold text-[#A66037] uppercase tracking-wider block">Planification de Sauvegarde Automatique</label>
+                   <select 
+                     value={backupSchedule}
+                     onChange={e => setBackupSchedule(e.target.value)}
+                     className="w-full px-3 py-2 bg-white border border-[#E8DCC4] rounded-xl font-bold"
+                   >
+                     <option value="daily">Quotidienne</option>
+                     <option value="weekly">Hebdomadaire</option>
+                     <option value="monthly">Mensuelle</option>
+                   </select>
+                 </div>
+
+                 <div className="space-y-1.5">
+                   <label className="font-bold text-[#A66037] uppercase tracking-wider block">Email Destinataire des Sauvegardes</label>
+                   <input 
+                     type="email"
+                     value={backupEmail}
+                     onChange={e => setBackupEmail(e.target.value)}
+                     required
+                     placeholder="Ex: direction@galf.ci"
+                     className="w-full px-3 py-2 bg-white border border-[#E8DCC4] rounded-xl font-bold"
+                   />
+                 </div>
+
+                 <div className="border-t border-[#E8DCC4]/30 my-2 pt-2" />
+
                  <div className="flex items-center justify-between">
-                   <label className="font-bold text-[#5C3D2E] uppercase">Activer la détection automatique</label>
+                   <label className="font-bold text-[#5C3D2E] uppercase">Activer la détection de fraude</label>
                    <input 
                      type="checkbox"
                      checked={autoSuspendRules.enabled}
@@ -2266,32 +2844,38 @@ export default function ParrainagePage() {
                      onChange={e => setAutoSuspendRules({ ...autoSuspendRules, maxDuplicates: Number(e.target.value) })}
                      className="w-full px-3 py-2 bg-white border border-[#E8DCC4] rounded-xl font-bold"
                    />
-                   <p className="text-[9px] text-gray-400">Nombre maximal autorisé avant suspension automatique.</p>
+                   <p className="text-[9px] text-gray-400">Nombre maximal autorisé de rattachements par numéro de téléphone.</p>
                  </div>
 
                  <div className="space-y-1.5">
-                   <label className="font-bold text-[#A66037] uppercase tracking-wider block">Saisies max par heure et par parrain</label>
+                   <label className="font-bold text-[#A66037] uppercase tracking-wider block">Saisies max par heure par parrain</label>
                    <input 
                      type="number"
                      value={autoSuspendRules.maxRegistrationsPerHour}
                      onChange={e => setAutoSuspendRules({ ...autoSuspendRules, maxRegistrationsPerHour: Number(e.target.value) })}
                      className="w-full px-3 py-2 bg-white border border-[#E8DCC4] rounded-xl font-bold"
                    />
-                   <p className="text-[9px] text-gray-400">Seuil de vitesse pour la détection des activités anormales.</p>
+                   <p className="text-[9px] text-gray-400">Seuil de détection pour les inscriptions frauduleuses en masse.</p>
                  </div>
 
-                 <button 
-                   onClick={() => {
-                     setConfigOpen(false);
-                     toast.success("Paramètres enregistrés avec succès !");
-                   }}
-                   className="w-full py-3 bg-[#5C3D2E] text-white hover:bg-[#A66037] rounded-xl font-bold uppercase tracking-wider shadow-md text-xs cursor-pointer mt-4"
-                 >
-                   Enregistrer
-                 </button>
+                 <div className="border-t border-[#E8DCC4]/30 pt-4 flex gap-3">
+                   <button 
+                     type="button" 
+                     onClick={() => setConfigOpen(false)}
+                     className="flex-1 py-3 bg-white hover:bg-[#FAF3E0] border border-[#E8DCC4] rounded-xl text-xs font-bold text-[#5C3D2E] transition-colors cursor-pointer"
+                   >
+                     Annuler
+                   </button>
+                   <button 
+                     type="submit"
+                     className="flex-1 py-3 bg-[#5C3D2E] text-white hover:bg-[#A66037] rounded-xl font-bold uppercase tracking-wider shadow-md text-xs cursor-pointer"
+                   >
+                     Enregistrer
+                   </button>
+                 </div>
               </div>
-           </div>
-        </div>
+           </form>
+         </div>
       )}
 
       {/* MODAL: CREATE CAMPAIGN */}
@@ -2490,6 +3074,70 @@ export default function ParrainagePage() {
                </div>
             </form>
          </div>
+      )}
+
+      {/* MODAL: CATALOGUE DE RECOMPENSES (NEW WAVE 2 FEATURE) */}
+      {catalogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm">
+           <div className="bg-[#FAF3E0] w-full max-w-2xl max-h-[85vh] rounded-[40px] shadow-2xl border border-white/20 overflow-hidden flex flex-col">
+              <div className="bg-[#5C3D2E] p-6 text-[#FAF3E0] flex justify-between items-center relative shrink-0">
+                  <div>
+                    <h3 className="text-xl font-bold font-dogon">Catalogue des Récompenses Ambassadeurs</h3>
+                    <p className="text-[10px] text-[#D4AF37] uppercase font-bold tracking-widest mt-1">Lots alternatifs et cadeaux intermédiaires</p>
+                  </div>
+                  <button onClick={() => setCatalogOpen(false)} className="p-2 bg-white/10 hover:bg-white/20 rounded-xl text-white">
+                     <X className="w-5 h-5" />
+                  </button>
+              </div>
+
+              <div className="p-8 flex-1 overflow-y-auto space-y-6">
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  Le programme principal offre une formation complète pour {targetReferralCount} filleuls validés ({targetReferralCount * 100} points).
+                  Cependant, l&apos;ambassadeur peut choisir des lots intermédiaires ci-dessous en échange de ses points cumulés.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {[
+                    {
+                      points: "100 pts",
+                      title: "Pack Ambassadeur",
+                      gift: "Polo Premium + Casquette + Carnet",
+                      desc: "Kit promotionnel de l'ambassadeur aux couleurs de GALF Formation.",
+                      badge: "1 Filleul validé"
+                    },
+                    {
+                      points: "300 pts",
+                      title: "Module Secourisme HSE",
+                      gift: "Attestation Premier Secours / SST",
+                      desc: "Module de formation pratique en Secourisme et Santé au Travail.",
+                      badge: "3 Filleuls validés"
+                    },
+                    {
+                      points: "500 pts",
+                      title: "Formation HSE Complète",
+                      gift: "Certificat de formation HSE Niveau 1, 2 & 3",
+                      desc: "La récompense majeure du programme. Accès complet à la certification.",
+                      badge: `${targetReferralCount} Filleuls validés`
+                    }
+                  ].map((item, idx) => (
+                    <div key={idx} className="bg-white p-5 rounded-2xl border border-[#E8DCC4] flex flex-col justify-between hover:shadow-md transition-shadow relative">
+                      <span className="absolute -top-2 -right-2 px-2 py-1 bg-[#D4AF37] text-[#2D1A12] text-[9px] font-black rounded-lg uppercase shadow-sm">
+                        {item.points}
+                      </span>
+                      <div className="space-y-2">
+                        <h4 className="font-bold text-sm text-[#5C3D2E] font-dogon mt-1">{item.title}</h4>
+                        <p className="text-xs font-semibold text-[#A66037]">{item.gift}</p>
+                        <p className="text-[10px] text-gray-500 leading-relaxed">{item.desc}</p>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-[#FAF3E0] text-[10px] font-bold text-gray-400">
+                        {item.badge}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+           </div>
+        </div>
       )}
 
     </div>

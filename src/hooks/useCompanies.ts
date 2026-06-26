@@ -31,8 +31,10 @@ export const useCompanies = () => {
       // Others see companies they are assigned to
       q = query(collection(db, "companies"), where("__name__", "in", profile.companies));
     } else {
-      setCompanies([]);
-      setLoading(false);
+      Promise.resolve().then(() => {
+        setCompanies([]);
+        setLoading(false);
+      });
       return;
     }
 

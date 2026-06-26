@@ -65,6 +65,11 @@ interface DashboardEntry {
 
 const PIE_COLORS = ["#5C3D2E", "#A66037", "#D4AF37", "#059669", "#3B82F6", "#8B5E3C"];
 
+const MONTHS_LIST = [
+  "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", 
+  "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
+];
+
 // Skeleton loader component
 const SkeletonCard = () => (
   <div className="kpi-card bg-white p-6 rounded-[32px] border border-[#E8DCC4] relative overflow-hidden">
@@ -88,6 +93,8 @@ export default function DashboardPage() {
   const [companies, setCompanies] = useState<string[]>([]);
   const [selectedCompany, setSelectedCompany] = useState("Toutes les entreprises");
   const [selectedPeriod, setSelectedPeriod] = useState("30 derniers jours");
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [enterprise, setEnterprise] = useState({ name: "NYA BLO", currency: "FCFA", salesTarget: 5000000 });
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [newGoalInput, setNewGoalInput] = useState("");
@@ -192,12 +199,14 @@ export default function DashboardPage() {
         return dateVal >= startOf30;
       } else if (selectedPeriod === "90 derniers jours") {
         return dateVal >= startOf90;
+      } else if (selectedPeriod === "Par mois spécifique") {
+        return dateVal.getFullYear() === selectedYear && dateVal.getMonth() === selectedMonth;
       }
       return true;
     });
 
     return result;
-  }, [entries, selectedCompany, selectedPeriod, profile]);
+  }, [entries, selectedCompany, selectedPeriod, selectedMonth, selectedYear, profile]);
 
   // --- Previous period entries for trend calculation ---
   const prevPeriodEntries = useMemo(() => {
@@ -226,23 +235,35 @@ export default function DashboardPage() {
         return dateVal >= startOf60 && dateVal < startOf30;
       } else if (selectedPeriod === "90 derniers jours") {
         return dateVal >= startOf180 && dateVal < startOf90;
+      } else if (selectedPeriod === "Par mois spécifique") {
+        const prevMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
+        const prevYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+        return dateVal.getFullYear() === prevYear && dateVal.getMonth() === prevMonth;
       }
       return false;
     });
-  }, [entries, selectedCompany, selectedPeriod, profile]);
+  }, [entries, selectedCompany, selectedPeriod, selectedMonth, selectedYear, profile]);
 
   // Current month sales
   const currentMonthSales = useMemo(() => {
-    const now = new Date();
+    const targetMonth = selectedPeriod === "Par mois spécifique" ? selectedMonth : new Date().getMonth();
+    const targetYear = selectedPeriod === "Par mois spécifique" ? selectedYear : new Date().getFullYear();
     let total = 0;
-    filteredEntries.forEach(entry => {
+    
+    // We compute this from the total matching entries list for correct historical target comparison
+    entries.forEach(entry => {
+      // Apply the same company filter
+      if (selectedCompany !== "Toutes les entreprises" && entry.companyId !== selectedCompany) return;
+      // Role permission check
+      if (profile?.role === "commerciale" && (entry as any).createdBy !== profile.uid) return;
+
       const entryDate = entry.date ? new Date(entry.date) : (entry.createdAt ? new Date(entry.createdAt) : null);
-      if (entryDate && entryDate.getFullYear() === now.getFullYear() && entryDate.getMonth() === now.getMonth()) {
+      if (entryDate && entryDate.getFullYear() === targetYear && entryDate.getMonth() === targetMonth) {
         total += entry.totalAmount;
       }
     });
     return total;
-  }, [filteredEntries]);
+  }, [entries, selectedPeriod, selectedMonth, selectedYear, selectedCompany, profile]);
 
   const progressPercent = useMemo(() => {
     if (!enterprise.salesTarget || enterprise.salesTarget <= 0) return 0;
@@ -335,13 +356,34 @@ export default function DashboardPage() {
     return { date: new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }), amount };
   }, [filteredEntries]);
 
+  // Entries filtered specifically for rankings (always by calendar month)
+  const rankingFilteredEntries = useMemo(() => {
+    let result = entries;
+
+    if (profile?.role === "commerciale") {
+      result = result.filter(e => (e as any).createdBy === profile.uid);
+    }
+
+    if (selectedCompany !== "Toutes les entreprises") {
+      result = result.filter(e => e.companyId === selectedCompany);
+    }
+
+    result = result.filter(e => {
+      const dateVal = e.date ? new Date(e.date) : (e.createdAt ? new Date(e.createdAt) : null);
+      if (!dateVal) return false;
+      return dateVal.getFullYear() === selectedYear && dateVal.getMonth() === selectedMonth;
+    });
+
+    return result;
+  }, [entries, selectedCompany, selectedMonth, selectedYear, profile]);
+
   // Agent performance
   const agentPerformance = useMemo(() => {
     const perfMap: Record<string, { id: string; name: string; email: string; sales: number; paid: number; pending: number; count: number }> = {};
     users.forEach(u => {
       perfMap[u.id] = { id: u.id, name: u.displayName || "Agent", email: u.email || "", sales: 0, paid: 0, pending: 0, count: 0 };
     });
-    filteredEntries.forEach(e => {
+    rankingFilteredEntries.forEach(e => {
       const creatorId = e.createdBy;
       if (!creatorId) return;
       if (!perfMap[creatorId]) {
@@ -353,7 +395,8 @@ export default function DashboardPage() {
       perfMap[creatorId].count += 1;
     });
     return Object.values(perfMap).sort((a, b) => b.sales - a.sales);
-  }, [filteredEntries, users]);
+  }, [rankingFilteredEntries, users]);
+
 
   // Weekly chart data (last 8 weeks)
   const weeklyChartData = useMemo(() => {
@@ -559,8 +602,32 @@ export default function DashboardPage() {
             <option value="Mois en cours">Mois en cours</option>
             <option value="30 derniers jours">30 derniers jours</option>
             <option value="90 derniers jours">90 derniers jours</option>
+            <option value="Par mois spécifique">Par mois spécifique</option>
             <option value="Toutes les données">Toutes les données</option>
          </select>
+
+         {selectedPeriod === "Par mois spécifique" && (
+            <>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                className="px-4 py-2.5 rounded-xl bg-[#FAF3E0]/40 border border-[#E8DCC4] text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-[#D4AF37]/20 cursor-pointer transition-colors"
+              >
+                {MONTHS_LIST.map((m, index) => (
+                  <option key={index} value={index}>{m}</option>
+                ))}
+              </select>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="px-4 py-2.5 rounded-xl bg-[#FAF3E0]/40 border border-[#E8DCC4] text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-[#D4AF37]/20 cursor-pointer transition-colors"
+              >
+                {[2024, 2025, 2026, 2027].map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </>
+          )}
       </div>
 
       {/* KPI Cards */}
@@ -869,7 +936,105 @@ export default function DashboardPage() {
         </>
       ) : (
         /* Performances Collaborateurs */
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="space-y-8">
+          {/* Month selector for the rankings */}
+          <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-6 rounded-3xl shadow-premium border border-[#E8DCC4]">
+            <div>
+              <h2 className="font-bold text-lg text-primary font-dogon">Classement Commercial Mensuel</h2>
+              <p className="text-xs text-[#B89E7E] mt-0.5">Palmarès et performances des collaborateurs pour le mois sélectionné.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold text-[#A66037] uppercase tracking-wider">Choisir le mois :</span>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                className="px-4 py-2.5 rounded-xl bg-[#FAF3E0]/40 border border-[#E8DCC4] text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-[#D4AF37]/20 cursor-pointer transition-colors"
+              >
+                {MONTHS_LIST.map((m, index) => (
+                  <option key={index} value={index}>{m}</option>
+                ))}
+              </select>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="px-4 py-2.5 rounded-xl bg-[#FAF3E0]/40 border border-[#E8DCC4] text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-[#D4AF37]/20 cursor-pointer transition-colors"
+              >
+                {[2024, 2025, 2026, 2027].map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Premium Visual Podium */}
+          {agentPerformance.some(a => a.sales > 0) ? (
+            <div className="bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] flex flex-col items-center">
+              <div className="flex items-center gap-2 mb-6">
+                <Trophy className="w-6 h-6 text-[#D4AF37] animate-bounce" />
+                <h3 className="font-bold text-xl text-primary font-dogon uppercase tracking-wide">Le Podium des Commerciaux</h3>
+              </div>
+              
+              <div className="flex items-end justify-center gap-4 sm:gap-8 w-full max-w-2xl py-6">
+                {/* 2nd Place */}
+                {agentPerformance[1] && agentPerformance[1].sales > 0 && (
+                  <div className="flex flex-col items-center w-1/3 group">
+                    <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center font-bold text-slate-700 text-xs shadow-sm mb-2 transition-transform duration-300 group-hover:scale-110">
+                      {agentPerformance[1].name.charAt(0)}
+                    </div>
+                    <p className="text-xs font-bold text-primary text-center truncate w-full">{agentPerformance[1].name}</p>
+                    <p className="text-[10px] font-bold text-emerald-600 mb-3">{agentPerformance[1].sales.toLocaleString()} {enterprise.currency}</p>
+                    <div className="w-full bg-gradient-to-t from-slate-200 to-slate-100 border-x border-t border-slate-300 rounded-t-2xl flex flex-col items-center justify-center p-4 min-h-[110px] shadow-md shadow-slate-100">
+                      <span className="text-3xl font-black text-slate-400 font-dogon">2</span>
+                      <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest mt-1">Argent 🥈</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* 1st Place */}
+                {agentPerformance[0] && agentPerformance[0].sales > 0 && (
+                  <div className="flex flex-col items-center w-1/3 group relative -top-4">
+                    <div className="absolute -top-6 text-yellow-500 animate-pulse">
+                      <Sparkles className="w-5 h-5" />
+                    </div>
+                    <div className="w-12 h-12 rounded-full bg-amber-50 border border-[#D4AF37] flex items-center justify-center font-bold text-amber-700 text-sm shadow-md mb-2 transition-transform duration-300 group-hover:scale-110">
+                      {agentPerformance[0].name.charAt(0)}
+                    </div>
+                    <p className="text-sm font-extrabold text-primary text-center truncate w-full">{agentPerformance[0].name}</p>
+                    <p className="text-xs font-extrabold text-amber-600 mb-3">{agentPerformance[0].sales.toLocaleString()} {enterprise.currency}</p>
+                    <div className="w-full bg-gradient-to-t from-[#D4AF37]/20 to-[#FAF3E0] border-x border-t border-[#D4AF37]/50 rounded-t-3xl flex flex-col items-center justify-center p-4 min-h-[150px] shadow-lg shadow-[#D4AF37]/5 relative">
+                      <div className="absolute inset-0 bg-radial from-[#D4AF37]/10 via-transparent to-transparent pointer-events-none rounded-t-3xl" />
+                      <span className="text-4xl font-black text-amber-600 font-dogon">1</span>
+                      <span className="text-[10px] font-extrabold text-amber-700 uppercase tracking-widest mt-1">Or 🥇</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3rd Place */}
+                {agentPerformance[2] && agentPerformance[2].sales > 0 && (
+                  <div className="flex flex-col items-center w-1/3 group">
+                    <div className="w-10 h-10 rounded-full bg-amber-50 border border-orange-200 flex items-center justify-center font-bold text-orange-700 text-xs shadow-sm mb-2 transition-transform duration-300 group-hover:scale-110">
+                      {agentPerformance[2].name.charAt(0)}
+                    </div>
+                    <p className="text-xs font-bold text-primary text-center truncate w-full">{agentPerformance[2].name}</p>
+                    <p className="text-[10px] font-bold text-emerald-600 mb-3">{agentPerformance[2].sales.toLocaleString()} {enterprise.currency}</p>
+                    <div className="w-full bg-gradient-to-t from-orange-100 to-orange-50 border-x border-t border-orange-200 rounded-t-2xl flex flex-col items-center justify-center p-4 min-h-[85px] shadow-sm shadow-orange-100">
+                      <span className="text-2xl font-black text-orange-400 font-dogon">3</span>
+                      <span className="text-[9px] font-extrabold text-orange-500 uppercase tracking-widest mt-1">Bronze 🥉</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4] flex flex-col items-center py-12">
+              <Trophy className="w-12 h-12 text-[#E8DCC4] mb-3" />
+              <p className="text-sm font-bold text-[#A66037] text-center">Aucune vente enregistrée pour ce mois.</p>
+              <p className="text-xs text-[#B89E7E] text-center mt-1">Le podium attend son premier champion ! 🏆</p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
            {/* Bar Chart */}
            <div className="chart-box lg:col-span-1 bg-white p-8 rounded-[40px] shadow-premium border border-[#E8DCC4]">
               <h3 className="font-bold text-xl text-primary font-dogon mb-2">Performances Comparées</h3>
@@ -980,9 +1145,10 @@ export default function DashboardPage() {
                     </tbody>
                  </table>
               </div>
-           </div>
+            </div>
+          </div>
         </div>
-      )}
+       )}
     </div>
   );
 }

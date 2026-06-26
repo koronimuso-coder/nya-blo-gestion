@@ -51,7 +51,9 @@ export default function UserActivityDrawer({ isOpen, onClose, user }: UserActivi
   // Fetch entries created by this user
   useEffect(() => {
     if (!isOpen || !user) return;
-    setLoading(true);
+    Promise.resolve().then(() => {
+      setLoading(true);
+    });
     const q = query(collection(db, "daily_entries"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const allDocs = snapshot.docs.map(doc => {

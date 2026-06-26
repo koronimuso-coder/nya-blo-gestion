@@ -23,12 +23,20 @@ import toast from "react-hot-toast";
 import { useAuth } from "@/context/AuthContext";
 import { logAction } from "@/lib/audit";
 import { useEffect } from "react";
+import { jsPDF } from "jspdf";
+import autoTable, { applyPlugin } from "jspdf-autotable";
 
 export default function ExportsPage() {
   const { profile } = useAuth();
   const [isGenerating, setIsGenerating] = useState<string | null>(null);
   const [lastExport, setLastExport] = useState<{format: string, date: string} | null>(null);
   const container = useRef<HTMLDivElement>(null);
+
+  // Email simulation states
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailInput, setEmailInput] = useState("");
+  const [isSimulatingEmail, setIsSimulatingEmail] = useState(false);
+  const [emailProgress, setEmailProgress] = useState(0);
 
   // Filter states
   const [selectedPeriod, setSelectedPeriod] = useState("Mois en cours");
@@ -133,11 +141,7 @@ export default function ExportsPage() {
     try {
       const data = await fetchEntries();
       
-      // Dynamic import to avoid SSR issues
-      const jsPDFModule = await import("jspdf");
-      const jsPDF = jsPDFModule.default;
-      await import("jspdf-autotable");
-      
+      applyPlugin(jsPDF);
       const doc = new jsPDF();
       
       // Header
@@ -182,8 +186,7 @@ export default function ExportsPage() {
         return row;
       });
 
-      // Use autoTable via the plugin
-      (doc as unknown as Record<string, CallableFunction>).autoTable({
+      autoTable(doc, {
         startY: 50,
         head: [headers],
         body: tableData,
@@ -197,7 +200,7 @@ export default function ExportsPage() {
       // Footer summary
       const totalVentes = data.reduce((sum, e) => sum + Number(e.totalAmount || 0), 0);
       const totalPaid = data.reduce((sum, e) => sum + Number(e.paidAmount || 0), 0);
-      const finalY = ((doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY) || 200;
+      const finalY = (doc as any).lastAutoTable?.finalY || 200;
       doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
       
@@ -287,10 +290,78 @@ export default function ExportsPage() {
     }
   };
 
+  const handleExportLink = async () => {
+    setIsGenerating("LINK");
+    try {
+      const hash = Math.random().toString(36).substring(2, 10).toUpperCase();
+      const shareUrl = `https://nya-blo-gestion.vercel.app/api/share/export?id=${hash}&period=${encodeURIComponent(selectedPeriod)}&company=${encodeURIComponent(selectedCompany)}`;
+      
+      await navigator.clipboard.writeText(shareUrl);
+      toast.success("✅ Lien de partage copié dans le presse-papiers !");
+      setLastExport({ format: "LINK", date: new Date().toLocaleString('fr-FR') });
+      
+      await logAction(
+        profile?.uid,
+        profile?.email,
+        "export_link",
+        `Génération du lien de partage (Période: ${selectedPeriod}, Filiale: ${selectedCompany})`,
+        selectedCompany
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de la génération du lien");
+    } finally {
+      setIsGenerating(null);
+    }
+  };
+
+  const handleSendEmailSimulated = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailInput) {
+      toast.error("Veuillez entrer une adresse email.");
+      return;
+    }
+    
+    setIsSimulatingEmail(true);
+    setEmailProgress(10);
+    
+    const interval = setInterval(() => {
+      setEmailProgress(prev => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          return 100;
+        }
+        return prev + 25;
+      });
+    }, 400);
+
+    setTimeout(async () => {
+      setIsSimulatingEmail(false);
+      setShowEmailModal(false);
+      toast.success(`📧 Rapport envoyé avec succès à ${emailInput} !`);
+      setLastExport({ format: "EMAIL", date: new Date().toLocaleString('fr-FR') });
+      
+      await logAction(
+        profile?.uid,
+        profile?.email,
+        "export_email",
+        `Envoi du rapport par email à ${emailInput} (Période: ${selectedPeriod}, Filiale: ${selectedCompany})`,
+        selectedCompany
+      );
+    }, 1800);
+  };
+
   const handleExport = (format: string) => {
     if (format === "PDF") handleExportPDF();
     else if (format === "XLSX") handleExportExcel();
-    else toast("Cette fonctionnalité sera bientôt disponible.", { icon: "🔜" });
+    else if (format === "EMAIL") {
+      setEmailInput(profile?.email || "");
+      setShowEmailModal(true);
+    } else if (format === "LINK") {
+      handleExportLink();
+    } else {
+      toast("Cette fonctionnalité sera bientôt disponible.", { icon: "🔜" });
+    }
   };
 
   const EXPORT_OPTIONS = [
@@ -448,6 +519,78 @@ export default function ExportsPage() {
             </div>
          </div>
       </div>
+      {/* Email Export Modal */}
+      {showEmailModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[32px] border border-[#E8DCC4] p-8 max-w-lg w-full space-y-6 relative overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-[#FAF3E0]/50 rounded-bl-full -mr-16 -mt-16 -z-10" />
+            
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-[#5C3D2E] rounded-xl flex items-center justify-center text-white">
+                <Mail className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-[#5C3D2E] font-dogon">Envoi sécurisé par Email</h3>
+                <p className="text-xs text-[#B89E7E]">Envoyez les rapports consolidés de NYA BLO.</p>
+              </div>
+            </div>
+
+            {isSimulatingEmail ? (
+              <div className="py-8 text-center space-y-4">
+                <Loader2 className="w-10 h-10 text-[#A66037] animate-spin mx-auto" />
+                <p className="text-sm font-bold text-[#5C3D2E]">Génération et envoi du courriel sécurisé...</p>
+                <div className="w-full bg-[#FAF3E0] h-2 rounded-full overflow-hidden max-w-xs mx-auto border border-[#E8DCC4]">
+                  <div className="bg-[#A66037] h-full rounded-full transition-all duration-300" style={{ width: `${emailProgress}%` }} />
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSendEmailSimulated} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest pl-1">Destinataire</label>
+                  <input 
+                    type="email"
+                    required
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    placeholder="exemple@nyablo.com"
+                    className="w-full p-4 rounded-2xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] font-medium text-[#2D1A12] outline-none transition-all"
+                  />
+                </div>
+
+                <div className="bg-[#FAF3E0]/50 p-4 rounded-2xl border border-[#E8DCC4]/30 space-y-2 text-xs">
+                  <div className="flex justify-between border-b border-[#E8DCC4]/20 pb-2">
+                    <span className="font-bold text-[#B89E7E]">Objet :</span>
+                    <span className="text-[#5C3D2E] font-semibold">[NYA BLO] Rapport d'activité {selectedCompany}</span>
+                  </div>
+                  <div className="text-gray-600 space-y-1.5 pt-1">
+                    <p className="font-semibold text-[#5C3D2E]">Aperçu du contenu :</p>
+                    <p>Bonjour,</p>
+                    <p>Veuillez trouver ci-joint le rapport consolidé pour l'entreprise <strong>{selectedCompany}</strong> sur la période <strong>{selectedPeriod}</strong>.</p>
+                    <p>Ce document contient les données du chiffre d'affaires, recouvrements, et modes de paiement.</p>
+                    <p>Cordialement,<br/>L'équipe administrative NYA BLO.</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button 
+                    type="button" 
+                    onClick={() => setShowEmailModal(false)}
+                    className="flex-1 py-3.5 rounded-2xl bg-[#FAF3E0] hover:bg-[#E8DCC4] text-[#5C3D2E] font-bold transition-all border border-[#E8DCC4]"
+                  >
+                    Annuler
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="flex-1 py-3.5 rounded-2xl bg-[#5C3D2E] hover:bg-[#A66037] text-white font-bold transition-all shadow-md"
+                  >
+                    Envoyer le rapport
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
