@@ -656,7 +656,7 @@ const EntryModal = ({ isOpen, onClose, editEntry }: EntryModalProps) => {
                        // Commerciale : affichage fixe de son entreprise, non modifiable
                        <div className="w-full px-4 py-3 rounded-xl bg-[#FAF3E0] border border-[#E8DCC4] font-bold text-sm text-[#5C3D2E] flex items-center gap-2">
                          <span className="w-2 h-2 bg-[#D4AF37] rounded-full" />
-                         {commonData.companyId || (profile.company ? profile.company : companies[0]?.name) || "GALF FORMATION"}
+                          {commonData.companyId || companies[0]?.name || "GALF FORMATION"}
                        </div>
                      ) : (
                        <select 

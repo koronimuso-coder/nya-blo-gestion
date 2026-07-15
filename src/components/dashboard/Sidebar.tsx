@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { 
@@ -19,8 +19,9 @@ import {
   Layers
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { auth } from "@/lib/firebase/config";
+import { auth, db } from "@/lib/firebase/config";
 import { signOut } from "firebase/auth";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 
@@ -44,6 +45,16 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const { profile } = useAuth();
   const container = React.useRef(null);
+  const [pendingRewards, setPendingRewards] = useState(0);
+
+  // Live badge: count eligible rewards
+  useEffect(() => {
+    const q = query(collection(db, "referral_rewards"), where("status", "==", "eligible"));
+    const unsub = onSnapshot(q, (snap) => {
+      setPendingRewards(snap.size);
+    }, () => {});
+    return () => unsub();
+  }, []);
 
   useGSAP(() => {
     const items = container.current
@@ -109,7 +120,16 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                 <item.icon className={`w-5 h-5 ${isActive ? "text-[#2D1A12]" : "text-[#B89E7E] group-hover:text-[#D4AF37] transition-colors"}`} />
                 <span className="text-sm tracking-tight">{item.label}</span>
               </div>
-              {isActive && <ChevronRight className="w-4 h-4" />}
+              <div className="flex items-center gap-2">
+                {item.href === "/dashboard/parrainage" && pendingRewards > 0 && (
+                  <span className={`w-5 h-5 rounded-full text-[9px] font-bold flex items-center justify-center animate-pulse ${
+                    isActive ? "bg-[#2D1A12] text-[#D4AF37]" : "bg-[#D4AF37] text-[#2D1A12]"
+                  }`}>
+                    {pendingRewards > 9 ? "9+" : pendingRewards}
+                  </span>
+                )}
+                {isActive && <ChevronRight className="w-4 h-4" />}
+              </div>
             </Link>
           );
         })}
@@ -118,9 +138,10 @@ export function Sidebar({ onNavigate }: SidebarProps) {
       <div className="p-6 mt-auto border-t border-white/5">
         <div className="bg-[#5C3D2E]/30 p-4 rounded-2xl mb-4 border border-[#5C3D2E]/50">
            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#A66037] flex items-center justify-center text-lg font-bold">
-                 {profile?.displayName?.charAt(0) || "U"}
-              </div>
+              <div className="w-10 h-10 rounded-xl bg-[#A66037] flex items-center justify-center text-lg font-bold relative">
+                  {profile?.displayName?.charAt(0) || "U"}
+                  <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-[#5C3D2E]" />
+               </div>
               <div className="min-w-0">
                  <p className="text-xs font-bold truncate">{profile?.displayName}</p>
                  <p className="text-[10px] text-[#E8DCC4] uppercase tracking-widest">{profile?.role?.replace('_', ' ')}</p>
@@ -135,6 +156,9 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           <LogOut className="w-5 h-5" />
           Déconnexion
         </button>
+        
+        {/* App version */}
+        <p className="text-center text-[10px] text-[#5C3D2E]/50 mt-4 tracking-widest">v2.1.0</p>
       </div>
     </div>
   );

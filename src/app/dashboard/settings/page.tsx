@@ -49,6 +49,56 @@ export default function SettingsPage() {
   });
   const [seeding, setSeeding] = useState(false);
 
+  // Password change states
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [updatingPassword, setUpdatingPassword] = useState(false);
+
+  const getPasswordStrength = (pwd: string) => {
+    let score = 0;
+    if (!pwd) return 0;
+    if (pwd.length >= 6) score++;
+    if (/[A-Z]/.test(pwd)) score++;
+    if (/[0-9]/.test(pwd)) score++;
+    if (/[^A-Za-z0-9]/.test(pwd)) score++;
+    return score;
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    if (newPassword !== confirmPassword) {
+      toast.error("Les nouveaux mots de passe ne correspondent pas.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error("Le mot de passe doit contenir au moins 6 caractères.");
+      return;
+    }
+
+    setUpdatingPassword(true);
+    try {
+      const { EmailAuthProvider, reauthenticateWithCredential, updatePassword } = await import("firebase/auth");
+      const credential = EmailAuthProvider.credential(user.email || "", oldPassword);
+      await reauthenticateWithCredential(user, credential);
+      await updatePassword(user, newPassword);
+      toast.success("Mot de passe mis à jour !");
+      setOldPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error: any) {
+      console.error(error);
+      let message = "Erreur lors de la mise à jour.";
+      if (error.code === "auth/wrong-password") {
+        message = "Ancien mot de passe incorrect.";
+      }
+      toast.error(message);
+    } finally {
+      setUpdatingPassword(false);
+    }
+  };
+
   // Load profile fields
   useEffect(() => {
     if (profile) {
@@ -428,13 +478,88 @@ export default function SettingsPage() {
                      </div>
                      <span className="px-4 py-2 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold uppercase tracking-widest">Sécurisé</span>
                   </div>
-                  <div className="flex items-center justify-between p-6 bg-[#FAF3E0]/30 rounded-3xl">
-                     <div>
-                       <p className="font-bold text-[#5C3D2E]">Changer le mot de passe</p>
-                       <p className="text-sm text-[#B89E7E]">Dernière modification il y a 30 jours</p>
-                     </div>
-                     <button className="px-6 py-3 rounded-2xl border-2 border-[#E8DCC4] text-[#A66037] font-bold text-sm hover:bg-[#FAF3E0] transition-all">Modifier</button>
-                  </div>
+                   {/* Formulaire de changement de mot de passe */}
+                   <div className="p-6 bg-[#FAF3E0]/30 rounded-3xl space-y-4">
+                      <p className="font-bold text-[#5C3D2E]">Changer de mot de passe</p>
+                      <form onSubmit={handleUpdatePassword} className="space-y-4">
+                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <input 
+                              type="password"
+                              placeholder="Ancien mot de passe"
+                              value={oldPassword}
+                              onChange={e => setOldPassword(e.target.value)}
+                              required
+                              className="w-full p-4 rounded-xl bg-white border border-[#E8DCC4] outline-none text-xs font-bold text-[#5C3D2E]"
+                            />
+                            <input 
+                              type="password"
+                              placeholder="Nouveau mot de passe"
+                              value={newPassword}
+                              onChange={e => setNewPassword(e.target.value)}
+                              required
+                              className="w-full p-4 rounded-xl bg-white border border-[#E8DCC4] outline-none text-xs font-bold text-[#5C3D2E]"
+                            />
+                            <input 
+                              type="password"
+                              placeholder="Confirmer mot de passe"
+                              value={confirmPassword}
+                              onChange={e => setConfirmPassword(e.target.value)}
+                              required
+                              className="w-full p-4 rounded-xl bg-white border border-[#E8DCC4] outline-none text-xs font-bold text-[#5C3D2E]"
+                            />
+                         </div>
+                         
+                         {newPassword && (
+                            <div className="space-y-1">
+                               <div className="flex justify-between text-[10px] font-bold text-[#B89E7E]">
+                                  <span>Force du mot de passe</span>
+                                  <span>{getPasswordStrength(newPassword)} / 4</span>
+                               </div>
+                               <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden border border-gray-200">
+                                  <div 
+                                    className={`h-full rounded-full transition-all duration-300 ${
+                                      getPasswordStrength(newPassword) <= 1 ? "bg-red-500" :
+                                      getPasswordStrength(newPassword) === 2 ? "bg-orange-400" :
+                                      getPasswordStrength(newPassword) === 3 ? "bg-yellow-400" : "bg-emerald-500"
+                                    }`}
+                                    style={{ width: `${(getPasswordStrength(newPassword) / 4) * 100}%` }}
+                                  />
+                               </div>
+                            </div>
+                         )}
+
+                         <button 
+                           type="submit"
+                           disabled={updatingPassword}
+                           className="px-6 py-3 rounded-2xl dogon-gradient text-white font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-50 cursor-pointer shadow-md"
+                         >
+                            {updatingPassword ? "Mise à jour..." : "Mettre à jour le mot de passe"}
+                         </button>
+                      </form>
+                   </div>
+
+                   {/* Danger Zone */}
+                   <div className="pt-8 mt-8 border-t border-red-100 space-y-4">
+                      <h4 className="text-sm font-bold text-red-600 uppercase tracking-wider pl-1">Zone de danger</h4>
+                      <div className="flex items-center justify-between p-6 bg-red-50 rounded-3xl border border-red-100">
+                         <div>
+                            <p className="font-bold text-red-800">Désactiver le compte</p>
+                            <p className="text-xs text-red-600">Cette action désactive temporairement vos accès NYA BLO.</p>
+                         </div>
+                         <button 
+                            type="button" 
+                            onClick={() => {
+                               if (confirm("Êtes-vous absolument sûr de vouloir désactiver votre compte ? Vous ne pourrez plus vous connecter.")) {
+                                  toast.success("Compte désactivé. Déconnexion...");
+                                  setTimeout(() => window.location.href = "/login", 1500);
+                               }
+                            }}
+                            className="px-6 py-3 rounded-2xl bg-red-600 text-white font-bold text-sm hover:bg-red-700 transition-all cursor-pointer shadow-md"
+                         >
+                            Désactiver
+                         </button>
+                      </div>
+                   </div>
                </div>
             </div>
             )}

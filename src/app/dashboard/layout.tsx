@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import GSAPWrapper from "@/components/GSAPWrapper";
-import { Bell, Search, UserCircle, Menu, Sun, Moon, X, TrendingUp, AlertCircle, CheckCircle } from "lucide-react";
+import { Bell, Search, UserCircle, Menu, Sun, Moon, X, TrendingUp, AlertCircle, CheckCircle, ChevronRight, Home } from "lucide-react";
 import NommoAI from "@/components/dashboard/NommoAI";
 import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/config";
@@ -160,32 +160,42 @@ export default function DashboardLayout({
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-20 bg-white/80 backdrop-blur-md border-b border-[#E8DCC4] sticky top-0 z-30 px-6 flex items-center justify-between">
+        <header className="h-20 backdrop-blur-md border-b sticky top-0 z-30 px-6 flex items-center justify-between" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-card) 85%, transparent)', borderColor: 'var(--border-base)' }}>
           <div className="flex items-center gap-4 lg:hidden">
-             <button 
-               className="p-2 hover:bg-[#FAF3E0] rounded-lg transition-colors cursor-pointer"
-               onClick={() => setIsMobileMenuOpen(true)}
-             >
-                <Menu className="w-6 h-6 text-[#5C3D2E]" />
-             </button>
-             <h1 className="font-bold font-dogon text-[#5C3D2E] tracking-tight">NYA BLO</h1>
+              <button 
+                className="p-2 rounded-lg transition-colors cursor-pointer" style={{ color: 'var(--fg-muted)' }}
+                onClick={() => setIsMobileMenuOpen(true)}
+              >
+                 <Menu className="w-6 h-6" />
+              </button>
+              <h1 className="font-bold font-dogon tracking-tight" style={{ color: 'var(--fg-heading)' }}>NYA BLO</h1>
           </div>
 
-          <div className="hidden md:flex items-center gap-3 bg-[#FAF3E0]/50 px-4 py-2.5 rounded-xl border border-[#E8DCC4] w-full max-w-md">
-            <Search className="w-4 h-4 text-[#B89E7E]" />
+          <div className="hidden md:flex items-center gap-3 px-4 py-2.5 rounded-xl border w-full max-w-md" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-subtle) 50%, transparent)', borderColor: 'var(--border-base)' }}>
+            <Search className="w-4 h-4" style={{ color: 'var(--fg-subtle)' }} />
             <input 
               type="text" 
               placeholder="Rechercher avec précision..." 
-              className="bg-transparent border-none outline-none text-sm w-full text-[#2D1A12] placeholder-[#B89E7E]"
+              className="bg-transparent border-none outline-none text-sm w-full placeholder:opacity-60" style={{ color: 'var(--fg-base)' }}
             />
+          </div>
+
+          {/* Breadcrumb */}
+          <div className="hidden lg:flex items-center gap-2 text-xs font-medium ml-4" style={{ color: 'var(--fg-subtle)' }}>
+            <Home className="w-3.5 h-3.5" />
+            <ChevronRight className="w-3 h-3" />
+            <span className="capitalize font-bold" style={{ color: 'var(--fg-heading)' }}>
+              {pathname === '/dashboard' ? 'Vue d\'ensemble' : pathname.split('/').pop()?.replace(/-/g, ' ')}
+            </span>
           </div>
 
           <div className="flex items-center gap-4">
             {/* Theme toggle */}
             <button 
               onClick={toggleTheme}
-              className="p-2.5 hover:bg-[#FAF3E0]/50 rounded-xl border border-[#E8DCC4] transition-all duration-300 group flex items-center justify-center cursor-pointer"
+              className="p-2.5 rounded-xl border transition-all duration-300 group flex items-center justify-center cursor-pointer"
               title={isDarkMode ? "Thème clair" : "Thème sombre"}
+              style={{ borderColor: 'var(--border-base)' }}
             >
               {isDarkMode ? (
                 <Sun className="w-5 h-5 text-[#D4AF37]" />
@@ -202,9 +212,10 @@ export default function DashboardLayout({
                   setNotifOpen(newState);
                   if (newState) markAllRead();
                 }}
-                className="relative p-2.5 hover:bg-[#FAF3E0] rounded-xl border border-[#E8DCC4] transition-colors group cursor-pointer"
+                className="relative p-2.5 rounded-xl border transition-colors group cursor-pointer"
+                style={{ borderColor: 'var(--border-base)' }}
               >
-                <Bell className="w-5 h-5 text-[#B89E7E] group-hover:text-[#A66037]" />
+                <Bell className="w-5 h-5" style={{ color: 'var(--fg-muted)' }} />
                 {unreadCount > 0 && (
                   <span className="absolute -top-1 -right-1 w-5 h-5 bg-[#A66037] text-white text-[9px] font-bold rounded-full flex items-center justify-center shadow-sm animate-pulse">
                     {unreadCount > 9 ? "9+" : unreadCount}
@@ -214,14 +225,14 @@ export default function DashboardLayout({
 
               {/* Notification Panel */}
               {notifOpen && (
-                <div className="absolute right-0 top-full mt-3 w-96 bg-white rounded-[24px] shadow-2xl border border-[#E8DCC4] overflow-hidden z-50">
-                  <div className="p-5 border-b border-[#E8DCC4]/50 flex items-center justify-between bg-[#FAF3E0]/40">
+                <div className="absolute right-0 top-full mt-3 w-96 rounded-[24px] shadow-2xl border overflow-hidden z-50" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-base)' }}>
+                  <div className="p-5 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)', backgroundColor: 'color-mix(in srgb, var(--bg-subtle) 40%, transparent)' }}>
                     <div>
-                      <h3 className="font-bold text-[#5C3D2E] font-dogon">Activité Récente</h3>
-                      <p className="text-[10px] text-[#B89E7E] uppercase tracking-wider">Dernières saisies — temps réel</p>
+                      <h3 className="font-bold font-dogon" style={{ color: 'var(--fg-heading)' }}>Activité Récente</h3>
+                      <p className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--fg-subtle)' }}>Dernières saisies — temps réel</p>
                     </div>
-                    <button onClick={() => setNotifOpen(false)} className="p-1.5 hover:bg-[#E8DCC4]/50 rounded-lg transition-colors cursor-pointer">
-                      <X className="w-4 h-4 text-[#B89E7E]" />
+                    <button onClick={() => setNotifOpen(false)} className="p-1.5 rounded-lg transition-colors cursor-pointer" style={{ color: 'var(--fg-subtle)' }}>
+                      <X className="w-4 h-4" />
                     </button>
                   </div>
                   <div className="max-h-80 overflow-y-auto custom-scrollbar">
@@ -265,8 +276,8 @@ export default function DashboardLayout({
             <div className="h-8 w-[1px] bg-[#E8DCC4] mx-1" />
             <div className="flex items-center gap-3 pl-1">
                <div className="text-right hidden sm:block">
-                  <p className="text-xs font-bold text-[#2D1A12] leading-none mb-1 uppercase tracking-wider">{profile?.displayName}</p>
-                  <p className="text-[10px] font-bold text-[#A66037] uppercase tracking-widest">{profile?.role?.replace('_', ' ')}</p>
+            <p className="text-xs font-bold leading-none mb-1 uppercase tracking-wider" style={{ color: 'var(--fg-heading)' }}>{profile?.displayName}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--color-clay)' }}>{profile?.role?.replace('_', ' ')}</p>
                </div>
                <div className="w-10 h-10 rounded-xl bg-[#5C3D2E] flex items-center justify-center border border-[#5C3D2E]/10 shadow-lg shadow-[#5C3D2E]/20">
                   <UserCircle className="w-7 h-7 text-[#FAF3E0]" />

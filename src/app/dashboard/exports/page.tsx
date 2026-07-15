@@ -142,20 +142,8 @@ export default function ExportsPage() {
       const data = await fetchEntries();
       
       applyPlugin(jsPDF);
-      const doc = new jsPDF();
       
-      // Header
-      doc.setFillColor(92, 61, 46);
-      doc.rect(0, 0, 210, 40, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(18);
-      doc.text(`NYA BLO — RAPPORT D'ACTIVITÉ`, 14, 18);
-      doc.setFontSize(9);
-      doc.text(`Filtres : Filiale = ${selectedCompany} | Période = ${selectedPeriod}`, 14, 26);
-      doc.text(`Généré le : ${new Date().toLocaleString('fr-FR')}`, 14, 32);
-      doc.setTextColor(0, 0, 0);
-
-      // Build Headers & Data dynamically based on checked fields
+      // Determine orientation based on columns count
       const headers = ['Date', 'Filiale'];
       if (checkedFields["Clients"]) headers.push('Client');
       if (checkedFields["Chiffre d'affaires"]) headers.push('Total');
@@ -167,6 +155,29 @@ export default function ExportsPage() {
         headers.push('Paiement');
         headers.push('Canal');
       }
+
+      const orientation = headers.length > 5 ? "landscape" : "portrait";
+      const doc = new jsPDF({ orientation, unit: "mm", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      
+      // Header
+      doc.setFillColor(92, 61, 46);
+      doc.rect(0, 0, pageWidth, 40, 'F');
+      doc.setTextColor(255, 255, 255);
+      
+      // Dogon golden accent line
+      doc.setFillColor(212, 175, 55);
+      doc.rect(0, 40, pageWidth, 2, 'F');
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.text(`NYA BLO — RAPPORT D'ACTIVITÉ`, 14, 18);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`Filtres : Filiale = ${selectedCompany} | Période = ${selectedPeriod}`, 14, 26);
+      doc.text(`Généré le : ${new Date().toLocaleString('fr-FR')} par ${profile?.email}`, 14, 32);
+      doc.setTextColor(0, 0, 0);
 
       const tableData = data.map((e: any) => {
         const row = [];
@@ -187,28 +198,39 @@ export default function ExportsPage() {
       });
 
       autoTable(doc, {
-        startY: 50,
+        startY: 48,
         head: [headers],
         body: tableData,
         theme: 'striped',
-        headStyles: { fillColor: [92, 61, 46], fontSize: 8, fontStyle: 'bold' },
+        headStyles: { fillColor: [92, 61, 46], fontSize: 8, fontStyle: 'bold', halign: 'center' },
         alternateRowStyles: { fillColor: [250, 243, 224] },
-        styles: { fontSize: 7, cellPadding: 3 },
+        styles: { fontSize: 7, cellPadding: 2.5, valign: 'middle' },
         margin: { left: 14, right: 14 }
       });
 
       // Footer summary
       const totalVentes = data.reduce((sum, e) => sum + Number(e.totalAmount || 0), 0);
       const totalPaid = data.reduce((sum, e) => sum + Number(e.paidAmount || 0), 0);
-      const finalY = (doc as any).lastAutoTable?.finalY || 200;
-      doc.setFontSize(10);
+      const finalY = (doc as any).lastAutoTable?.finalY || 150;
+      doc.setFontSize(9);
       doc.setFont("helvetica", "bold");
       
-      let summaryText = "";
-      if (checkedFields["Chiffre d'affaires"]) summaryText += `Total Ventes: ${totalVentes.toLocaleString()} ${currency} | `;
-      if (checkedFields["Recouvrements"]) summaryText += `Total Encaissé: ${totalPaid.toLocaleString()} ${currency} | Reste: ${(totalVentes - totalPaid).toLocaleString()} ${currency}`;
+      let currentY = finalY + 15;
+      if (currentY > pageHeight - 20) {
+        doc.addPage();
+        currentY = 20;
+      }
       
-      doc.text(summaryText, 14, finalY + 15);
+      doc.setTextColor(92, 61, 46);
+      doc.text("RÉSUMÉ CONSOLIDÉ DES CHIFFRES :", 14, currentY);
+      
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      let summaryText = "";
+      if (checkedFields["Chiffre d'affaires"]) summaryText += `Total Ventes : ${totalVentes.toLocaleString()} ${currency}    |    `;
+      if (checkedFields["Recouvrements"]) summaryText += `Total Encaissé : ${totalPaid.toLocaleString()} ${currency}    |    Reste à Recouvrer : ${(totalVentes - totalPaid).toLocaleString()} ${currency}`;
+      
+      doc.text(summaryText, 14, currentY + 6);
 
       doc.save(`NYA_BLO_Rapport_${new Date().toISOString().split('T')[0]}.pdf`);
       setLastExport({ format: "PDF", date: new Date().toLocaleString('fr-FR') });

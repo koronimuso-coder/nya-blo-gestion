@@ -21,9 +21,13 @@ import {
   Sparkles,
   Trophy,
   Flame,
-  Star
+  Star,
+  Plus,
+  Layers,
+  FileText
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { Button } from "@/components/ui/Button";
 
 import { 
   XAxis, 
@@ -269,6 +273,55 @@ export default function DashboardPage() {
     if (!enterprise.salesTarget || enterprise.salesTarget <= 0) return 0;
     return Math.min(Math.round((currentMonthSales / enterprise.salesTarget) * 100), 100);
   }, [currentMonthSales, enterprise.salesTarget]);
+
+  // Streak de saisies consécutives
+  const streak = useMemo(() => {
+    const userEntries = profile?.role === "commerciale" 
+      ? entries.filter(e => e.createdBy === profile.uid)
+      : entries;
+
+    if (userEntries.length === 0) return 0;
+
+    const dates = Array.from(new Set(
+      userEntries.map(e => {
+        const d = e.date ? new Date(e.date) : (e.createdAt ? new Date(e.createdAt) : null);
+        return d ? d.toISOString().split('T')[0] : null;
+      }).filter(Boolean)
+    )) as string[];
+
+    dates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+
+    if (dates.length === 0) return 0;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    let currentIdx = dates.indexOf(todayStr);
+    if (currentIdx === -1) {
+      currentIdx = dates.indexOf(yesterdayStr);
+    }
+    if (currentIdx === -1) return 0;
+
+    let currentStreak = 1;
+    let checkDate = new Date(dates[currentIdx]);
+
+    for (let i = currentIdx + 1; i < dates.length; i++) {
+      const nextDate = new Date(dates[i]);
+      const diffTime = Math.abs(checkDate.getTime() - nextDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays === 1) {
+        currentStreak++;
+        checkDate = nextDate;
+      } else if (diffDays > 1) {
+        break;
+      }
+    }
+
+    return currentStreak;
+  }, [entries, profile]);
 
   // Celebration
   useEffect(() => {
@@ -562,6 +615,12 @@ export default function DashboardPage() {
           <p className="text-[#B89E7E] mt-1">Vue globale des activités de {enterprise.name} en temps réel.</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
+          {streak > 0 && (
+            <div className="flex items-center gap-2 bg-[#FAF3E0] border border-[#E8DCC4] px-4 py-2.5 rounded-2xl shadow-premium animate-pulse">
+              <Flame className="w-4 h-4 text-[#D4AF37]" />
+              <span className="text-sm font-bold text-[#A66037]">{streak} jours actifs consécutifs ! 🔥</span>
+            </div>
+          )}
           {bestDay && (
             <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 px-4 py-2.5 rounded-2xl">
               <Flame className="w-4 h-4 text-amber-500" />
@@ -577,6 +636,25 @@ export default function DashboardPage() {
              <span className="text-sm font-bold text-primary">{stats.count} ops filtrées</span>
           </div>
         </div>
+      </div>
+
+      {/* Quick Actions Bar */}
+      <div className="flex flex-wrap gap-4 relative z-20">
+        <Link href="/dashboard/entries">
+          <Button variant="gold" className="rounded-2xl h-12 px-6 flex items-center gap-2 text-sm font-bold shadow-gold cursor-pointer">
+            <Plus className="w-4 h-4" /> Nouvelle Saisie de Vente
+          </Button>
+        </Link>
+        <Link href="/dashboard/pipeline">
+          <Button variant="outline" className="rounded-2xl h-12 px-6 bg-white border border-[#E8DCC4] flex items-center gap-2 text-sm font-bold hover:bg-[#FAF3E0]/30 transition-all cursor-pointer">
+            <Layers className="w-4 h-4 text-[#A66037]" /> Pipeline Visuel
+          </Button>
+        </Link>
+        <Link href="/dashboard/exports">
+          <Button variant="outline" className="rounded-2xl h-12 px-6 bg-white border border-[#E8DCC4] flex items-center gap-2 text-sm font-bold hover:bg-[#FAF3E0]/30 transition-all cursor-pointer">
+            <FileText className="w-4 h-4 text-emerald-500" /> Archives & Exports
+          </Button>
+        </Link>
       </div>
 
       {/* Filters Bar */}

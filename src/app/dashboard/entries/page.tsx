@@ -19,7 +19,8 @@ import {
   ChevronLeft,
   ChevronRight,
   SlidersHorizontal,
-  X
+  X,
+  Download
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import EntryModal, { type EditableEntry } from "@/components/dashboard/EntryModal";
@@ -30,6 +31,8 @@ import { db } from "@/lib/firebase/config";
 import toast from "react-hot-toast";
 import { useAuth } from "@/context/AuthContext";
 import { logAction } from "@/lib/audit";
+import { jsPDF } from "jspdf";
+import autoTable, { applyPlugin } from "jspdf-autotable";
 
 interface Entry {
   id: string;
@@ -302,6 +305,107 @@ export default function EntriesPage() {
     setEditEntry(null);
   };
 
+  const [exporting, setExporting] = useState<string | null>(null);
+
+  const exportPDF = async () => {
+    setExporting("PDF");
+    try {
+      applyPlugin(jsPDF);
+      // Landscape orientation is far superior for 10 columns
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      
+      // Header Banner
+      doc.setFillColor(45, 26, 18);
+      doc.rect(0, 0, pageWidth, 40, 'F');
+      doc.setTextColor(255, 255, 255);
+      
+      // Dogon golden accent line
+      doc.setFillColor(212, 175, 55);
+      doc.rect(0, 40, pageWidth, 2, 'F');
+      
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(18);
+      doc.text("NYA BLO — EXPORT DES POINTS JOURNALIERS", 14, 18);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(`Nombre d'enregistrements : ${processedEntries.length} | Filiale : ${filterCompany} | Statut : ${filterStatus}`, 14, 26);
+      doc.text(`Généré par : ${profile?.email} le ${new Date().toLocaleString('fr-FR')}`, 14, 32);
+      
+      const headers = ["Date", "Client", "Contact", "Filiale", "Total (FCFA)", "Encaissé (FCFA)", "Reste (FCFA)", "Mode", "Canal", "Statut"];
+      const tableData = processedEntries.map(entry => [
+        entry.date ? new Date(entry.date).toLocaleDateString("fr-FR") : "--",
+        entry.clientName || "",
+        entry.clientContact || "",
+        entry.companyId || "",
+        entry.totalAmount.toLocaleString(),
+        entry.paidAmount.toLocaleString(),
+        (entry.resteAVerser || 0).toLocaleString(),
+        entry.modePaiement || "Espèces",
+        entry.canal || "Direct",
+        entry.status || "Confirmé"
+      ]);
+
+      autoTable(doc, {
+        startY: 48,
+        head: [headers],
+        body: tableData,
+        theme: 'striped',
+        headStyles: { fillColor: [45, 26, 18], fontSize: 8, fontStyle: 'bold', halign: 'center' },
+        alternateRowStyles: { fillColor: [250, 243, 224] },
+        styles: { fontSize: 7, cellPadding: 2.5, valign: 'middle' },
+        columnStyles: {
+          4: { halign: 'right' },
+          5: { halign: 'right' },
+          6: { halign: 'right' },
+          9: { halign: 'center' }
+        },
+        margin: { left: 14, right: 14 }
+      });
+
+      // Calculate totals for footer summary
+      const sumVentes = processedEntries.reduce((a, c) => a + c.totalAmount, 0);
+      const sumPaid = processedEntries.reduce((a, c) => a + c.paidAmount, 0);
+      const sumReste = processedEntries.reduce((a, c) => a + (c.resteAVerser || 0), 0);
+
+      const finalY = (doc as any).lastAutoTable?.finalY || 150;
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      
+      // Page budget calculation: height is 210mm in landscape. If finalY + 20 exceeds 190, add new page.
+      let currentY = finalY + 15;
+      if (currentY > pageHeight - 20) {
+        doc.addPage();
+        currentY = 20;
+      }
+      
+      doc.setTextColor(45, 26, 18);
+      doc.text(`SYNTHÈSE FINANCIÈRE DE LA VUE :`, 14, currentY);
+      
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      const summaryText = `Total Ventes : ${sumVentes.toLocaleString()} FCFA   |   Total Encaissé : ${sumPaid.toLocaleString()} FCFA   |   Reste à Verser : ${sumReste.toLocaleString()} FCFA`;
+      doc.text(summaryText, 14, currentY + 6);
+
+      doc.save(`NYA_BLO_PointsJournaliers_${new Date().toISOString().split('T')[0]}.pdf`);
+      toast.success("Rapport PDF exporté !");
+      
+      await logAction(
+        profile?.uid,
+        profile?.email,
+        "export_pdf",
+        `Génération du rapport PDF des Points Journaliers (${processedEntries.length} lignes)`,
+        filterCompany !== "Toutes" ? filterCompany : "global"
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error("Erreur lors de l'export PDF");
+    } finally {
+      setExporting(null);
+    }
+  };
+
   const [generatingReceiptId, setGeneratingReceiptId] = useState<string | null>(null);
 
   const handleGenerateReceipt = async (entry: Entry) => {
@@ -515,6 +619,14 @@ export default function EntriesPage() {
           <p className="text-[#B89E7E] mt-1">Données réelles synchronisées en temps réel.</p>
         </div>
         <div className="flex items-center gap-3">
+           <button 
+              onClick={exportPDF}
+              disabled={exporting !== null}
+              className="px-5 py-3.5 bg-[#FAF3E0] hover:bg-[#5C3D2E] hover:text-white text-[#5C3D2E] border border-[#E8DCC4] rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer shadow-md disabled:opacity-50 h-14 relative z-20"
+           >
+              {exporting === "PDF" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              Exporter la vue
+           </button>
            <Button 
               variant="gold" 
               className="rounded-2xl shadow-gold h-14 relative z-20"

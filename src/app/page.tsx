@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import Link from "next/link";
 import { 
   ShieldCheck, 
@@ -9,7 +9,11 @@ import {
   Globe, 
   Zap, 
   Lock,
-  ChevronDown
+  ChevronDown,
+  Gift,
+  Quote,
+  Menu,
+  X
 } from "lucide-react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -118,6 +122,7 @@ export default function LandingPage() {
         <div className="hidden md:flex items-center gap-8">
            <a href="#vision" className="text-sm font-bold uppercase tracking-widest hover:text-[#D4AF37] transition-colors">Vision</a>
            <a href="#modules" className="text-sm font-bold uppercase tracking-widest hover:text-[#D4AF37] transition-colors">Écosystème</a>
+           <Link href="/parrainage" className="text-sm font-bold uppercase tracking-widest hover:text-[#D4AF37] transition-colors">Parrainage</Link>
            <Link href="/login">
               <Button variant="gold" className="rounded-xl px-8 shadow-gold cursor-pointer">Espace Pro</Button>
            </Link>
@@ -197,7 +202,7 @@ export default function LandingPage() {
 
       {/* Features Preview */}
       <section id="modules" className="relative z-10 max-w-7xl mx-auto px-8 py-20">
-         <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             <FeatureCard 
               icon={Globe}
               title="Multi-Filiale"
@@ -213,14 +218,85 @@ export default function LandingPage() {
               title="Étanchéité"
               desc="Sécurité Dogon garantie par Firebase pour une protection totale de vos secrets."
             />
+            <FeatureCard 
+              icon={Gift}
+              title="Parrainage"
+              desc="Programme ambassadeur GALF : 5 filleuls validés = 1 formation professionnelle offerte."
+            />
          </div>
+      </section>
+
+      {/* Stats Counters Section */}
+      <section className="relative z-10 py-20 border-y border-white/5 bg-[#2D1A12]/30 backdrop-blur-sm">
+        <div className="max-w-6xl mx-auto px-8">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/20 text-[#D4AF37] text-[10px] font-bold uppercase tracking-[0.3em] mb-6">
+              <Sparkles className="w-3 h-3" /> Chiffres Clés
+            </div>
+            <h2 className="text-3xl md:text-4xl font-bold font-dogon text-white">L&apos;écosystème en mouvement</h2>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+            <AnimatedCounter target={15} suffix="+" label="Entreprises Gérées" />
+            <AnimatedCounter target={45} suffix="+" label="Agents Actifs" />
+            <AnimatedCounter target={2500} suffix="+" label="Transactions / mois" />
+            <AnimatedCounter target={87} suffix="%" label="Taux Recouvrement" />
+          </div>
+        </div>
+      </section>
+
+      {/* Testimonials Section */}
+      <section className="relative z-10 max-w-7xl mx-auto px-8 py-24">
+        <div className="text-center mb-16">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase tracking-[0.3em] mb-6">
+            <Quote className="w-3 h-3" /> Témoignages
+          </div>
+          <h2 className="text-3xl md:text-4xl font-bold font-dogon text-white">Ils nous font confiance</h2>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {[
+            { name: "Amadou Diallo", role: "DG, GALF Formation", quote: "NYA BLO a transformé notre suivi commercial. Nous voyons en temps réel l'état de chaque formation vendue." },
+            { name: "Fatou Koné", role: "Superviseur, Flowers CI", quote: "L'interface est intuitive et le programme de parrainage a doublé nos inscriptions en 3 mois." },
+            { name: "Ibrahim Traoré", role: "Agent Commercial", quote: "Je peux saisir mes ventes depuis le terrain. Plus de papier, plus de doublons. C'est révolutionnaire." },
+          ].map((t, i) => (
+            <div key={i} className="feature-card-anim p-8 rounded-[32px] bg-white/5 border border-white/5 hover:border-[#D4AF37]/20 transition-all opacity-0">
+              <Quote className="w-8 h-8 text-[#D4AF37]/30 mb-4" />
+              <p className="text-white/80 text-sm leading-relaxed mb-6 italic">&ldquo;{t.quote}&rdquo;</p>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#A66037] flex items-center justify-center font-bold text-sm">
+                  {t.name.charAt(0)}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-white">{t.name}</p>
+                  <p className="text-[10px] text-[#B89E7E] uppercase tracking-wider">{t.role}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* CTA Parrainage */}
+      <section className="relative z-10 max-w-5xl mx-auto px-8 py-16">
+        <div className="p-10 md:p-14 rounded-[40px] bg-gradient-to-br from-[#5C3D2E]/40 to-[#A66037]/20 border border-white/10 backdrop-blur-sm flex flex-col md:flex-row items-center gap-8">
+          <div className="flex-1">
+            <div className="w-14 h-14 bg-[#D4AF37]/15 rounded-2xl flex items-center justify-center mb-5 border border-[#D4AF37]/20">
+              <Gift className="w-7 h-7 text-[#D4AF37]" />
+            </div>
+            <h3 className="text-2xl md:text-3xl font-bold font-dogon text-white mb-3">Programme de Parrainage GALF</h3>
+            <p className="text-[#B89E7E] leading-relaxed">Recommandez GALF Formation et gagnez des formations gratuites. 5 filleuls validés = 1 formation offerte !</p>
+          </div>
+          <Link href="/parrainage" className="inline-flex items-center gap-3 px-8 py-4 bg-[#D4AF37] text-[#1A0F0A] rounded-2xl text-lg font-bold shadow-lg shadow-[#D4AF37]/20 hover:shadow-[#D4AF37]/40 transition-all hover:scale-105 active:scale-95 shrink-0">
+            Découvrir <ArrowRight className="w-5 h-5" />
+          </Link>
+        </div>
       </section>
 
       {/* Footer */}
       <footer className="relative z-10 border-t border-white/5 py-12 px-8">
          <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
-            <p className="text-[#B89E7E] text-sm italic">© {new Date().getFullYear()} NYA BLO SARL. L'architecture du futur.</p>
+            <p className="text-[#B89E7E] text-sm italic">© {new Date().getFullYear()} NYA BLO SARL. L&apos;architecture du futur.</p>
             <div className="flex gap-6">
+               <Link href="/parrainage" className="text-[10px] font-bold text-white/40 uppercase tracking-widest hover:text-[#D4AF37] transition-colors">Parrainage</Link>
                <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Abidjan</span>
                <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Bamako</span>
                <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Dakar</span>
@@ -242,3 +318,42 @@ function FeatureCard({ icon: Icon, title, desc }: any) {
     </div>
   );
 }
+
+function AnimatedCounter({ target, suffix, label }: { target: number; suffix: string; label: string }) {
+  const [count, setCount] = useState(0);
+  const [hasAnimated, setHasAnimated] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !hasAnimated) {
+          setHasAnimated(true);
+          const duration = 2000;
+          const startTime = performance.now();
+          const animate = (currentTime: number) => {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const eased = 1 - Math.pow(1 - progress, 3);
+            setCount(Math.round(eased * target));
+            if (progress < 1) requestAnimationFrame(animate);
+          };
+          requestAnimationFrame(animate);
+        }
+      },
+      { threshold: 0.5 }
+    );
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, [target, hasAnimated]);
+
+  return (
+    <div ref={ref}>
+      <div className="text-3xl md:text-5xl font-bold font-dogon text-[#D4AF37] mb-2">
+        {count.toLocaleString()}{suffix}
+      </div>
+      <div className="text-xs text-[#B89E7E] font-bold uppercase tracking-widest">{label}</div>
+    </div>
+  );
+}
+

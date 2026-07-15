@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
-import { Plus, ShieldCheck, MoreVertical, Search, Sparkles, Loader2, Edit3, Trash2, Activity } from "lucide-react";
+import { Plus, ShieldCheck, MoreVertical, Search, Sparkles, Loader2, Edit3, Trash2, Activity, Filter } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -28,6 +28,7 @@ export default function UsersPage() {
   const [editUser, setEditUser] = useState<Collaborator | null>(null);
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
   const [isActivityOpen, setIsActivityOpen] = useState(false);
   const [selectedUserForActivity, setSelectedUserForActivity] = useState<Collaborator | null>(null);
 
@@ -56,11 +57,29 @@ export default function UsersPage() {
     }
   }, [activeDropdown]);
 
-  const filteredCollaborators = collaborators.filter(u => 
-    u.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.role?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredCollaborators = collaborators.filter(u => {
+    const matchesSearch = u.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      u.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      u.role?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesRole = roleFilter === "all" || u.role === roleFilter;
+    return matchesSearch && matchesRole;
+  });
+
+  // Role stats
+  const roleStats = {
+    super_admin: collaborators.filter(c => c.role === "super_admin").length,
+    admin_entreprise: collaborators.filter(c => c.role === "admin_entreprise").length,
+    superviseur: collaborators.filter(c => c.role === "superviseur").length,
+    commerciale: collaborators.filter(c => c.role === "commerciale").length,
+  };
+
+  // Dynamic avatar color from name hash
+  const getAvatarColor = (name: string) => {
+    let hash = 0;
+    for (let i = 0; i < (name || "").length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    const hue = Math.abs(hash % 360);
+    return `hsl(${hue}, 55%, 45%)`;
+  };
 
   useGSAP(() => {
     if (!loading) {
@@ -120,34 +139,29 @@ export default function UsersPage() {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
-        <div className="bg-white p-5 rounded-3xl shadow-premium border border-[#E8DCC4] flex items-center gap-4 hover:shadow-dogon hover:-translate-y-1 transition-all duration-300">
-          <div className="w-12 h-12 bg-[#5C3D2E] rounded-2xl flex items-center justify-center text-[#FAF3E0]">
-            <ShieldCheck className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest">Total Effectifs</p>
-            <p className="text-2xl font-bold font-dogon text-[#2D1A12]">{collaborators.length}</p>
-          </div>
-        </div>
-        <div className="bg-white p-5 rounded-3xl shadow-premium border border-[#E8DCC4] flex items-center gap-4 hover:shadow-dogon hover:-translate-y-1 transition-all duration-300">
-          <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-white">
-            <Sparkles className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest">Actifs</p>
-            <p className="text-2xl font-bold font-dogon text-emerald-600">{collaborators.filter(c => c.active !== false).length}</p>
-          </div>
-        </div>
-        <div className="bg-white p-5 rounded-3xl shadow-premium border border-[#E8DCC4] flex items-center gap-4 hover:shadow-dogon hover:-translate-y-1 transition-all duration-300">
-          <div className="w-12 h-12 bg-[#D4AF37] rounded-2xl flex items-center justify-center text-[#2D1A12]">
-            <Sparkles className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest">Total Saisies</p>
-            <p className="text-2xl font-bold font-dogon text-[#D4AF37]">{collaborators.reduce((acc, c) => acc + (c.entriesCount || 0), 0)}</p>
-          </div>
-        </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 relative z-10">
+        {[
+          { label: "Total", count: collaborators.length, bg: "bg-[#5C3D2E]", text: "text-[#2D1A12]", filter: "all" },
+          { label: "Admins", count: roleStats.super_admin + roleStats.admin_entreprise, bg: "bg-[#D4AF37]", text: "text-[#D4AF37]", filter: "admin" },
+          { label: "Superviseurs", count: roleStats.superviseur, bg: "bg-[#A66037]", text: "text-[#A66037]", filter: "superviseur" },
+          { label: "Commerciales", count: roleStats.commerciale, bg: "bg-emerald-500", text: "text-emerald-600", filter: "commerciale" },
+        ].map((s, i) => (
+          <button
+            key={i}
+            onClick={() => setRoleFilter(s.filter === "admin" ? (roleFilter === "super_admin" || roleFilter === "admin_entreprise" ? "all" : "super_admin") : (roleFilter === s.filter ? "all" : s.filter))}
+            className={`bg-white p-4 rounded-2xl shadow-premium border border-[#E8DCC4] flex items-center gap-3 hover:shadow-dogon hover:-translate-y-1 transition-all duration-300 cursor-pointer text-left ${
+              (roleFilter === s.filter || (s.filter === "admin" && (roleFilter === "super_admin" || roleFilter === "admin_entreprise"))) ? "ring-2 ring-[#D4AF37]" : ""
+            }`}
+          >
+            <div className={`w-10 h-10 ${s.bg} rounded-xl flex items-center justify-center text-white`}>
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-[9px] font-bold text-[#B89E7E] uppercase tracking-widest">{s.label}</p>
+              <p className={`text-xl font-bold font-dogon ${s.text}`}>{s.count}</p>
+            </div>
+          </button>
+        ))}
       </div>
 
       <div className="bg-white rounded-[40px] shadow-premium border border-[#E8DCC4] overflow-hidden relative z-10">

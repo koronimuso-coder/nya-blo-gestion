@@ -59,6 +59,23 @@ export default function AuditPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [exporting, setExporting] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"table" | "timeline">("timeline");
+
+  const getActionIcon = (action: string) => {
+    switch (action) {
+      case "sale_create": return Activity;
+      case "sale_update": return Activity;
+      case "sale_delete": return ShieldAlert;
+      case "company_create":
+      case "company_update":
+      case "company_delete": return Building;
+      case "user_create":
+      case "user_update": return User;
+      case "export_pdf":
+      case "export_xlsx": return FileSpreadsheet;
+      default: return Activity;
+    }
+  };
 
   useEffect(() => {
     // Only subscribe to database if user is authorized
@@ -348,73 +365,139 @@ export default function AuditPage() {
               )}
             </div>
 
-            <p className="text-xs font-bold text-[#B89E7E] ml-2">{filteredLogs.length} ligne(s)</p>
+            <div className="flex bg-[#FAF3E0] p-1 rounded-xl border border-[#E8DCC4] ml-2">
+              <button
+                onClick={() => setViewMode("timeline")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  viewMode === "timeline" ? "bg-[#5C3D2E] text-white" : "text-[#5C3D2E]"
+                }`}
+              >
+                Timeline
+              </button>
+              <button
+                onClick={() => setViewMode("table")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  viewMode === "table" ? "bg-[#5C3D2E] text-white" : "text-[#5C3D2E]"
+                }`}
+              >
+                Tableau
+              </button>
+            </div>
+            
+            <p className="text-xs font-bold text-[#B89E7E] ml-auto">{filteredLogs.length} ligne(s)</p>
           </div>
         </div>
 
-        {/* Audit Logs Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-[#FAF3E0]/50 text-[#B89E7E] text-[10px] font-bold uppercase tracking-[0.2em]">
-              <tr>
-                <th className="px-8 py-5">Date & Heure</th>
-                <th className="px-8 py-5">Utilisateur</th>
-                <th className="px-8 py-5">Action</th>
-                <th className="px-8 py-5">Détails de l&apos;Opération</th>
-                <th className="px-8 py-5">Cible</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#E8DCC4]/20">
+        {viewMode === "timeline" ? (
+          <div className="p-8 relative">
+            <div className="absolute left-[39px] top-8 bottom-8 w-0.5 bg-[#E8DCC4]/40" />
+            <div className="space-y-8">
               {filteredLogs.map((log) => {
                 const actionMeta = ACTION_LABELS[log.action] || { label: log.action, color: "bg-slate-50 text-slate-700 border-slate-200" };
+                const Icon = getActionIcon(log.action);
                 const dateObj = new Date(log.timestamp);
                 const dateStr = dateObj.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
-                const timeStr = dateObj.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+                const timeStr = dateObj.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
                 return (
-                  <tr key={log.id} className="log-row hover:bg-[#FAF3E0]/15 transition-colors">
-                    <td className="px-8 py-5 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <Clock className="w-3.5 h-3.5 text-[#B89E7E]" />
-                        <span className="text-xs font-bold text-[#5C3D2E]">{dateStr}</span>
-                        <span className="text-[10px] text-[#A66037] font-medium">{timeStr}</span>
-                      </div>
-                    </td>
-                    <td className="px-8 py-5 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-[#E8DCC4] flex items-center justify-center text-[9px] font-bold text-[#5C3D2E]">
-                          {log.userEmail?.charAt(0).toUpperCase()}
+                  <div key={log.id} className="flex gap-6 items-start relative z-10 log-row">
+                    <div className="w-12 h-12 rounded-2xl bg-white border border-[#E8DCC4] flex items-center justify-center text-[#5C3D2E] shadow-sm shrink-0">
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 bg-[#FAF3E0]/20 p-5 rounded-3xl border border-[#E8DCC4]/30 hover:border-[#D4AF37]/30 transition-all">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-[#5C3D2E]">{log.userEmail}</span>
+                          <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border ${actionMeta.color}`}>
+                            {actionMeta.label}
+                          </span>
                         </div>
-                        <span className="text-xs font-semibold text-primary">{log.userEmail}</span>
+                        <div className="flex items-center gap-1.5 text-[10px] text-[#B89E7E] font-medium">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>{dateStr} à {timeStr}</span>
+                        </div>
                       </div>
-                    </td>
-                    <td className="px-8 py-5 whitespace-nowrap">
-                      <span className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider border ${actionMeta.color}`}>
-                        {actionMeta.label}
-                      </span>
-                    </td>
-                    <td className="px-8 py-5 max-w-md">
-                      <p className="text-xs font-medium text-[#2D1A12] leading-relaxed break-words">{log.details}</p>
-                    </td>
-                    <td className="px-8 py-5 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-[#A66037] uppercase tracking-tight">
-                        <Building className="w-3.5 h-3.5 text-[#B89E7E]" />
-                        <span>{log.companyId}</span>
-                      </div>
-                    </td>
-                  </tr>
+                      <p className="text-xs text-primary font-medium">{log.details}</p>
+                      {log.companyId && (
+                        <div className="mt-3 inline-flex items-center gap-1 bg-[#FAF3E0] px-2.5 py-1 rounded-lg border border-[#E8DCC4]/40 text-[9px] font-bold text-[#A66037] uppercase tracking-wider">
+                          <Building className="w-3 h-3" /> {log.companyId}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 );
               })}
               {filteredLogs.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-8 py-20 text-center text-[#B89E7E] italic uppercase tracking-widest text-xs">
-                    Aucun événement de sécurité trouvé.
-                  </td>
-                </tr>
+                <div className="text-center py-20 text-[#B89E7E] italic uppercase tracking-widest text-xs">
+                  Aucun événement de sécurité trouvé.
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead className="bg-[#FAF3E0]/50 text-[#B89E7E] text-[10px] font-bold uppercase tracking-[0.2em]">
+                <tr>
+                  <th className="px-8 py-5">Date & Heure</th>
+                  <th className="px-8 py-5">Utilisateur</th>
+                  <th className="px-8 py-5">Action</th>
+                  <th className="px-8 py-5">Détails de l&apos;Opération</th>
+                  <th className="px-8 py-5">Cible</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E8DCC4]/20">
+                {filteredLogs.map((log) => {
+                  const actionMeta = ACTION_LABELS[log.action] || { label: log.action, color: "bg-slate-50 text-slate-700 border-slate-200" };
+                  const dateObj = new Date(log.timestamp);
+                  const dateStr = dateObj.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+                  const timeStr = dateObj.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+                  return (
+                    <tr key={log.id} className="log-row hover:bg-[#FAF3E0]/15 transition-colors">
+                      <td className="px-8 py-5 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-[#B89E7E]" />
+                          <span className="text-xs font-bold text-[#5C3D2E]">{dateStr}</span>
+                          <span className="text-[10px] text-[#A66037] font-medium">{timeStr}</span>
+                        </div>
+                      </td>
+                      <td className="px-8 py-5 whitespace-nowrap">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-[#E8DCC4] flex items-center justify-center text-[9px] font-bold text-[#5C3D2E]">
+                            {log.userEmail?.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="text-xs font-semibold text-primary">{log.userEmail}</span>
+                        </div>
+                      </td>
+                      <td className="px-8 py-5 whitespace-nowrap">
+                        <span className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider border ${actionMeta.color}`}>
+                          {actionMeta.label}
+                        </span>
+                      </td>
+                      <td className="px-8 py-5 max-w-md">
+                        <p className="text-xs font-medium text-[#2D1A12] leading-relaxed break-words">{log.details}</p>
+                      </td>
+                      <td className="px-8 py-5 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-[#A66037] uppercase tracking-tight">
+                          <Building className="w-3.5 h-3.5 text-[#B89E7E]" />
+                          <span>{log.companyId}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filteredLogs.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-8 py-20 text-center text-[#B89E7E] italic uppercase tracking-widest text-xs">
+                      Aucun événement de sécurité trouvé.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

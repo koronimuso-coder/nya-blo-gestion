@@ -16,8 +16,10 @@ import {
   Info,
   ChevronDown,
   ChevronUp,
-  Share2
+  Share2,
+  ArrowLeft
 } from "lucide-react";
+import Link from "next/link";
 import toast, { Toaster } from "react-hot-toast";
 
 interface ReferralMember {
@@ -120,10 +122,22 @@ export default function PublicProgressChecker() {
       <Toaster position="top-center" />
 
       {/* Header bar */}
-      <header className="w-full bg-[#5C3D2E] p-6 text-center text-[#FAF3E0] shadow-md relative overflow-hidden">
+      <header className="w-full bg-[#5C3D2E] p-6 text-[#FAF3E0] shadow-md relative overflow-hidden flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="absolute inset-0 dogon-pattern opacity-10 pointer-events-none" />
-        <h1 className="text-2xl font-bold font-dogon tracking-wider uppercase">GALF FORMATION</h1>
-        <p className="text-xs text-[#D4AF37] font-bold tracking-widest mt-1">Espace Suivi Parrainage Ambassadeur</p>
+        <div className="flex items-center gap-3 z-10">
+          <Link href="/parrainage" className="p-2 hover:bg-white/10 rounded-xl transition-colors text-[#FAF3E0]" title="Retour à l'accueil parrainage">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div className="text-left">
+            <h1 className="text-lg font-bold font-dogon tracking-wider uppercase leading-none">GALF FORMATION</h1>
+            <p className="text-[10px] text-[#D4AF37] font-bold tracking-widest mt-1">Suivi Parrainage Ambassadeur</p>
+          </div>
+        </div>
+        <div className="flex gap-4 z-10 text-xs">
+          <Link href="/parrainage/inscription" className="text-[#FAF3E0]/70 hover:text-white transition-colors">Inscription</Link>
+          <span className="text-white/20">|</span>
+          <Link href="/parrainage/portal" className="text-[#FAF3E0]/70 hover:text-white transition-colors">Espace Pro</Link>
+        </div>
       </header>
 
       {/* Main Container */}

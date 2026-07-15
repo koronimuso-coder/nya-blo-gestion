@@ -24,8 +24,10 @@ import {
   ChevronRight,
   TrendingUp,
   X,
-  Loader2
+  Loader2,
+  ArrowLeft
 } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import toast from "react-hot-toast";
 import gsap from "gsap";
@@ -316,6 +318,13 @@ export default function ParrainagePortal() {
         {!member ? (
           <div className="max-w-md mx-auto bg-[#2D1A12] border border-[#5C3D2E] p-8 md:p-10 rounded-[40px] shadow-2xl relative overflow-hidden animate-fade">
             <div className="absolute top-0 right-0 w-24 h-24 bg-[#D4AF37]/5 rounded-bl-full" />
+            
+            {/* Back button */}
+            <div className="mb-4">
+              <Link href="/parrainage" className="inline-flex items-center gap-1 text-xs text-[#B89E7E] hover:text-[#D4AF37] transition-colors">
+                <ArrowLeft className="w-3.5 h-3.5" /> Retour
+              </Link>
+            </div>
             
             {/* Logo area */}
             <div className="flex items-center gap-3 mb-8 justify-center">

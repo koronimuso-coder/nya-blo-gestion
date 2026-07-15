@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import { auth } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { ShieldCheck, Mail, Lock, Loader2, ArrowRight, Sparkles, Eye, EyeOff } from "lucide-react";
+import { ShieldCheck, Mail, Lock, Loader2, ArrowRight, Sparkles, Eye, EyeOff, KeyRound, CheckCircle, Home } from "lucide-react";
 import toast from "react-hot-toast";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -15,6 +16,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
   const router = useRouter();
   const { user, loading } = useAuth();
   
@@ -81,6 +86,26 @@ export default function LoginPage() {
       toast.error(message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail.trim()) {
+      toast.error("Veuillez entrer votre adresse email.");
+      return;
+    }
+    setResetLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, resetEmail);
+      setResetSent(true);
+      toast.success("Email de réinitialisation envoyé !");
+    } catch (error: unknown) {
+      console.error(error);
+      // Generic message for security
+      setResetSent(true);
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -189,11 +214,91 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="form-element mt-12 text-center text-slate-400 text-sm">
+          {/* Forgot password link */}
+          <button
+            onClick={() => { setShowForgotModal(true); setResetSent(false); setResetEmail(email); }}
+            className="form-element block w-full text-center mt-6 text-sm text-[#A66037] font-bold hover:text-[#D4AF37] transition-colors cursor-pointer"
+          >
+            <KeyRound className="w-4 h-4 inline mr-2" />Mot de passe oublié ?
+          </button>
+
+          <div className="form-element mt-8 flex items-center gap-4">
+            <div className="h-px flex-1 bg-[#E8DCC4]/30" />
+            <Link href="/" className="text-xs text-slate-400 hover:text-[#A66037] transition-colors flex items-center gap-1.5">
+              <Home className="w-3.5 h-3.5" /> Accueil
+            </Link>
+            <div className="h-px flex-1 bg-[#E8DCC4]/30" />
+          </div>
+
+          <p className="form-element mt-6 text-center text-slate-400 text-sm">
             Besoin d&apos;aide ? <a href="#" className="text-[#A66037] font-bold hover:underline">Support NYA BLO</a>
           </p>
         </div>
       </div>
+
+      {/* Forgot Password Modal */}
+      {showForgotModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4" onClick={() => setShowForgotModal(false)}>
+          <div className="bg-white rounded-[32px] w-full max-w-md p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+            {resetSent ? (
+              <div className="text-center py-6">
+                <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                  <CheckCircle className="w-8 h-8 text-emerald-600" />
+                </div>
+                <h3 className="text-2xl font-bold text-[#2D1A12] font-dogon mb-3">Email envoyé !</h3>
+                <p className="text-slate-500 text-sm leading-relaxed mb-6">
+                  Si un compte existe avec cette adresse, un email de réinitialisation a été envoyé. Vérifiez votre boîte de réception et vos spams.
+                </p>
+                <button
+                  onClick={() => setShowForgotModal(false)}
+                  className="px-8 py-3 rounded-xl dogon-gradient text-white font-bold shadow-lg cursor-pointer"
+                >
+                  Retour à la connexion
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="mb-8">
+                  <div className="w-14 h-14 bg-[#D4AF37]/10 rounded-2xl flex items-center justify-center mb-4">
+                    <KeyRound className="w-7 h-7 text-[#D4AF37]" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-[#2D1A12] font-dogon mb-2">Réinitialiser le mot de passe</h3>
+                  <p className="text-slate-500 text-sm">Entrez votre adresse email pour recevoir un lien de réinitialisation.</p>
+                </div>
+                <form onSubmit={handleForgotPassword} className="space-y-5">
+                  <div className="relative group">
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-300 group-focus-within:text-[#D4AF37] transition-colors" />
+                    <input
+                      type="email"
+                      required
+                      value={resetEmail}
+                      onChange={e => setResetEmail(e.target.value)}
+                      className="w-full pl-12 pr-4 py-4 rounded-[20px] bg-[#FAF3E0]/30 border-2 border-transparent focus:border-[#D4AF37] focus:bg-white outline-none transition-all font-medium"
+                      placeholder="votre@email.com"
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotModal(false)}
+                      className="flex-1 py-4 rounded-[20px] border-2 border-[#E8DCC4] text-[#5C3D2E] font-bold hover:bg-[#FAF3E0] transition-all cursor-pointer"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={resetLoading}
+                      className="flex-1 py-4 rounded-[20px] dogon-gradient text-white font-bold shadow-lg disabled:opacity-50 cursor-pointer"
+                    >
+                      {resetLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : "Envoyer"}
+                    </button>
+                  </div>
+                </form>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
