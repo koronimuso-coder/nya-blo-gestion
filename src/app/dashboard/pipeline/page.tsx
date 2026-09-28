@@ -3,23 +3,19 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { db } from "@/lib/firebase/config";
-import { collection, query, onSnapshot, orderBy, doc, updateDoc } from "firebase/firestore";
+import { collection, query, onSnapshot, doc, updateDoc, orderBy } from "firebase/firestore";
 import { 
   Loader2, 
   Search, 
-  Filter, 
-  ArrowRight,
   User, 
-  Calendar, 
   AlertCircle, 
   CheckCircle2, 
   DollarSign, 
-  ChevronRight, 
   X, 
   Edit3,
   Layers,
-  Sparkles,
-  RefreshCw
+  Calendar,
+  Filter
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import EntryModal, { type EditableEntry } from "@/components/dashboard/EntryModal";
@@ -31,6 +27,7 @@ import { useGSAP } from "@gsap/react";
 interface PipelineEntry {
   id: string;
   date: string;
+  createdAt?: string;
   clientName: string;
   clientContact: string;
   companyId: string;
@@ -58,14 +55,14 @@ interface Column {
   color: string;
   borderColor: string;
   bgColor: string;
-  icon: any;
+  icon: React.ElementType;
 }
 
 const COLUMNS: Column[] = [
   {
     id: "prospect",
     title: "Prospects Enregistrés",
-    statuses: ["prospect enregistré", "En attente", "inscription en attente"],
+    statuses: ["prospect enregistré", "en attente", "inscription en attente", "prospect", "nouveau"],
     color: "text-[#A66037]",
     borderColor: "border-[#A66037]/20",
     bgColor: "bg-[#FAF3E0]/40",
@@ -74,7 +71,7 @@ const COLUMNS: Column[] = [
   {
     id: "verif",
     title: "Paiements à Vérifier",
-    statuses: ["paiement à vérifier", "Incomplet"],
+    statuses: ["paiement à vérifier", "incomplet", "à vérifier", "a verifier"],
     color: "text-amber-600",
     borderColor: "border-amber-200",
     bgColor: "bg-amber-50/30",
@@ -83,7 +80,7 @@ const COLUMNS: Column[] = [
   {
     id: "partiel",
     title: "Paiements Partiels",
-    statuses: ["paiement partiel"],
+    statuses: ["paiement partiel", "partiel"],
     color: "text-orange-600",
     borderColor: "border-orange-200",
     bgColor: "bg-orange-50/20",
@@ -92,7 +89,7 @@ const COLUMNS: Column[] = [
   {
     id: "valide",
     title: "Soldés & Validés",
-    statuses: ["paiement complet", "inscription validée", "Confirmé"],
+    statuses: ["paiement complet", "inscription validée", "confirmé", "confirme", "validé", "valide", "soldé", "solde"],
     color: "text-emerald-700",
     borderColor: "border-emerald-200",
     bgColor: "bg-emerald-50/20",
@@ -100,9 +97,31 @@ const COLUMNS: Column[] = [
   }
 ];
 
+const MONTHS_LIST = [
+  "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", 
+  "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
+];
+
+function getEntryYearMonth(entry: { date?: string; createdAt?: string }): { year: number; month: number } | null {
+  if (entry.date && typeof entry.date === "string") {
+    const parts = entry.date.split("-");
+    if (parts.length >= 2) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      if (!isNaN(y) && !isNaN(m)) return { year: y, month: m };
+    }
+  }
+  const dateStr = entry.date || entry.createdAt;
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  return { year: d.getFullYear(), month: d.getMonth() };
+}
+
 export default function PipelinePage() {
   const { profile } = useAuth();
   const container = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
   
   const [entries, setEntries] = useState<PipelineEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,6 +129,11 @@ export default function PipelinePage() {
   const [selectedCompany, setSelectedCompany] = useState("Toutes");
   const [companies, setCompanies] = useState<string[]>([]);
   const [currency, setCurrency] = useState("FCFA");
+
+  // Period / Month filtering states
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("Mois en cours");
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
 
   // Selection states
   const [selectedEntry, setSelectedEntry] = useState<PipelineEntry | null>(null);
@@ -133,26 +157,35 @@ export default function PipelinePage() {
     return () => unsub();
   }, []);
 
-  // Fetch entries in real time
+  // Fetch entries in real time with client-side sorting for resilience
   useEffect(() => {
-    const q = query(collection(db, "daily_entries"), orderBy("date", "desc"));
+    const q = collection(db, "daily_entries");
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => {
-        const data = doc.data();
+      const docs = snapshot.docs.map(docSnap => {
+        const data = docSnap.data();
         const total = Number(data.totalAmount || 0);
         const paid = Number(data.paidAmount || 0);
         return {
-          id: doc.id,
+          id: docSnap.id,
           ...data,
           totalAmount: total,
           paidAmount: paid,
           resteAVerser: data.resteAVerser != null ? Number(data.resteAVerser) : (total - paid),
         } as PipelineEntry;
       });
+
+      // Sort client-side by date desc (fallback to createdAt desc)
+      docs.sort((a, b) => {
+        const dateA = a.date || a.createdAt || "";
+        const dateB = b.date || b.createdAt || "";
+        return String(dateB).localeCompare(String(dateA));
+      });
+
       setEntries(docs);
       setLoading(false);
     }, (error) => {
       console.error("Firestore loading error:", error);
+      toast.error("Erreur de chargement des fiches du pipeline.");
       setLoading(false);
     });
     return () => unsubscribe();
@@ -170,9 +203,19 @@ export default function PipelinePage() {
 
   // Filtered entries
   const filteredEntries = useMemo(() => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    const prevDate = new Date(currentYear, currentMonth - 1, 1);
+    const prevYear = prevDate.getFullYear();
+    const prevMonth = prevDate.getMonth();
+
     return entries.filter(e => {
-      // Role permission check
-      if (profile?.role === "commerciale" && e.createdBy !== profile?.uid) return false;
+      // Role permission check for commerciale
+      if (profile?.role === "commerciale") {
+        const isOwner = e.createdBy === profile?.uid || (profile?.email && e.createdByEmail === profile?.email);
+        if (!isOwner) return false;
+      }
       
       // Company check
       if (selectedCompany !== "Toutes" && e.companyId !== selectedCompany) return false;
@@ -180,19 +223,37 @@ export default function PipelinePage() {
       // Search check
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
-        return (
+        const matchesSearch = (
           e.clientName?.toLowerCase().includes(q) ||
           e.companyId?.toLowerCase().includes(q) ||
           e.motif?.toLowerCase().includes(q) ||
-          e.clientContact?.includes(q)
+          e.clientContact?.includes(q) ||
+          e.status?.toLowerCase().includes(q)
         );
+        if (!matchesSearch) return false;
+      }
+
+      // Period & Month check
+      if (selectedPeriod !== "Tous les mois") {
+        const ym = getEntryYearMonth(e);
+        if (!ym) return false;
+
+        if (selectedPeriod === "Mois en cours") {
+          if (ym.year !== currentYear || ym.month !== currentMonth) return false;
+        } else if (selectedPeriod === "Mois précédent") {
+          if (ym.year !== prevYear || ym.month !== prevMonth) return false;
+        } else if (selectedPeriod === "Par mois spécifique") {
+          if (ym.year !== selectedYear || ym.month !== selectedMonth) return false;
+        } else if (selectedPeriod === "Année " + currentYear) {
+          if (ym.year !== currentYear) return false;
+        }
       }
       
       return true;
     });
-  }, [entries, searchTerm, selectedCompany, profile]);
+  }, [entries, searchTerm, selectedCompany, profile, selectedPeriod, selectedMonth, selectedYear]);
 
-  // Group entries by Column ID
+  // Group entries by Column ID (case-insensitive status matching)
   const columnData = useMemo(() => {
     const map: Record<string, PipelineEntry[]> = {
       prospect: [],
@@ -202,18 +263,18 @@ export default function PipelinePage() {
     };
 
     filteredEntries.forEach(entry => {
-      const status = entry.status || "Confirmé";
+      const rawStatus = (entry.status || "Confirmé").trim().toLowerCase();
       let matched = false;
       
       for (const col of COLUMNS) {
-        if (col.statuses.includes(status)) {
+        if (col.statuses.some(s => s.toLowerCase() === rawStatus)) {
           map[col.id].push(entry);
           matched = true;
           break;
         }
       }
       
-      // Fallback to prospect if status doesn't match
+      // Fallback to prospect column if status doesn't match predefined list
       if (!matched) {
         map["prospect"].push(entry);
       }
@@ -236,8 +297,23 @@ export default function PipelinePage() {
 
   // HTML5 Drag and Drop Handlers
   const handleDragStart = (e: React.DragEvent, entryId: string) => {
+    isDraggingRef.current = true;
     e.dataTransfer.setData("text/plain", entryId);
     e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragEnd = () => {
+    setTimeout(() => {
+      isDraggingRef.current = false;
+    }, 100);
+  };
+
+  const handleCardClick = (entry: PipelineEntry) => {
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      return;
+    }
+    setSelectedEntry(entry);
   };
 
   const handleDragOver = (e: React.DragEvent, colId: string) => {
@@ -295,8 +371,9 @@ export default function PipelinePage() {
     }
   };
 
-  // Status Change Button (alternative to drag and drop for mobile/accessibility)
+  // Status Change Button or Dropdown Handler
   const handleStatusChangeClick = async (entry: PipelineEntry, newStatus: string) => {
+    if (!newStatus || entry.status === newStatus) return;
     try {
       const entryRef = doc(db, "daily_entries", entry.id);
       await updateDoc(entryRef, { 
@@ -352,30 +429,84 @@ export default function PipelinePage() {
 
       {/* Filter bar */}
       <div className="pipeline-filters flex flex-wrap items-center justify-between gap-4 bg-white p-5 rounded-3xl shadow-premium border border-[#E8DCC4] relative z-10">
-        <div className="flex items-center gap-4 flex-1 max-w-lg">
-          <div className="relative flex-1 group">
+        <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
+          {/* Search Input */}
+          <div className="relative min-w-[200px] flex-1 group">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#B89E7E] group-focus-within:text-[#D4AF37] transition-colors" />
             <input 
               type="text" 
               placeholder="Rechercher un prospect ou client..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-11 pr-4 py-3.5 rounded-2xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] text-xs font-bold outline-none transition-all placeholder-[#B89E7E]"
+              className="w-full pl-11 pr-4 py-3 rounded-xl bg-[#FAF3E0]/30 border border-[#E8DCC4] focus:ring-2 focus:ring-[#D4AF37]/20 focus:border-[#D4AF37] text-xs font-bold outline-none transition-all placeholder-[#B89E7E]"
             />
           </div>
+
+          {/* Company Selector */}
           <select
             value={selectedCompany}
             onChange={(e) => setSelectedCompany(e.target.value)}
-            className="px-4 py-3 rounded-xl bg-[#FAF3E0]/40 border border-[#E8DCC4] text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-[#D4AF37]/20 cursor-pointer transition-colors"
+            className="px-3.5 py-3 rounded-xl bg-[#FAF3E0]/40 border border-[#E8DCC4] text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-[#D4AF37]/20 cursor-pointer transition-colors"
           >
             <option value="Toutes">Toutes les entreprises</option>
             {companies.map(c => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
+
+          {/* Period Selector (Mois en cours, Mois précédent, Par mois spécifique, Tous les mois) */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <select
+                value={selectedPeriod}
+                onChange={(e) => setSelectedPeriod(e.target.value)}
+                className="pl-9 pr-6 py-3 rounded-xl bg-[#FAF3E0]/40 border border-[#E8DCC4] text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-[#D4AF37]/20 cursor-pointer transition-colors"
+              >
+                <option value="Mois en cours">Mois en cours ({MONTHS_LIST[new Date().getMonth()]})</option>
+                <option value="Mois précédent">Mois précédent ({MONTHS_LIST[(new Date().getMonth() + 11) % 12]})</option>
+                <option value="Par mois spécifique">Par mois spécifique...</option>
+                <option value={`Année ${new Date().getFullYear()}`}>Année {new Date().getFullYear()}</option>
+                <option value="Tous les mois">Tous les mois (Historique complet)</option>
+              </select>
+              <Calendar className="w-4 h-4 text-[#A66037] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+
+            {/* If Specific Month is Selected */}
+            {selectedPeriod === "Par mois spécifique" && (
+              <div className="flex items-center gap-2 animate-fadeIn">
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                  className="px-3 py-3 rounded-xl bg-[#FAF3E0]/40 border border-[#E8DCC4] text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-[#D4AF37]/20 cursor-pointer"
+                >
+                  {MONTHS_LIST.map((m, idx) => (
+                    <option key={idx} value={idx}>{m}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="px-3 py-3 rounded-xl bg-[#FAF3E0]/40 border border-[#E8DCC4] text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-[#D4AF37]/20 cursor-pointer"
+                >
+                  {[2024, 2025, 2026, 2027, 2028].map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
         </div>
+
         <div className="flex items-center gap-3">
-          <p className="text-xs font-bold text-[#B89E7E]">{filteredEntries.length} prospect(s) actif(s)</p>
+          <div className="px-3.5 py-1.5 rounded-full bg-[#FAF3E0] border border-[#E8DCC4] text-xs font-bold text-[#A66037] flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-[#D4AF37]" />
+            {filteredEntries.length} dossier(s) • {
+              selectedPeriod === "Par mois spécifique" 
+                ? `${MONTHS_LIST[selectedMonth]} ${selectedYear}`
+                : selectedPeriod
+            }
+          </div>
         </div>
       </div>
 
@@ -432,7 +563,8 @@ export default function PipelinePage() {
                       key={entry.id}
                       draggable
                       onDragStart={(e) => handleDragStart(e, entry.id)}
-                      onClick={() => setSelectedEntry(entry)}
+                      onDragEnd={handleDragEnd}
+                      onClick={() => handleCardClick(entry)}
                       className="group/card bg-white p-5 rounded-3xl border border-[#E8DCC4] shadow-sm hover:shadow-premium hover:-translate-y-0.5 cursor-grab active:cursor-grabbing transition-all duration-200"
                     >
                       <div className="flex justify-between items-start mb-2">
@@ -517,35 +649,22 @@ export default function PipelinePage() {
             <div className="flex-1 overflow-y-auto p-6 space-y-6 relative">
               <div className="absolute inset-0 dogon-pattern opacity-3 pointer-events-none" />
 
-              {/* Status Indicator */}
-              <div className="bg-[#FAF3E0]/50 p-4 rounded-3xl border border-[#E8DCC4]/50 space-y-2 relative z-10">
-                <span className="text-[9px] font-bold text-[#B89E7E] uppercase block">Statut Actuel</span>
-                <div className="flex items-center justify-between">
-                  <span className="px-3 py-1 bg-[#5C3D2E] text-white rounded-full text-[10px] font-bold uppercase tracking-wider">
-                    {selectedEntry.status || "Confirmé"}
-                  </span>
-                  <div className="flex gap-1.5">
-                    {/* Status transition triggers */}
-                    {selectedEntry.status !== "prospect enregistré" && (
-                      <button 
-                        onClick={() => handleStatusChangeClick(selectedEntry, "prospect enregistré")}
-                        className="px-2 py-1 bg-white hover:bg-[#FAF3E0] border border-[#E8DCC4] rounded-lg text-[9px] font-bold text-[#5C3D2E] cursor-pointer"
-                        title="Remettre en Prospect"
-                      >
-                        🔄 Prospect
-                      </button>
-                    )}
-                    {selectedEntry.status !== "inscription validée" && (
-                      <button 
-                        onClick={() => handleStatusChangeClick(selectedEntry, "inscription validée")}
-                        className="px-2 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[9px] font-bold cursor-pointer"
-                        title="Valider l'inscription"
-                      >
-                        ✓ Valider
-                      </button>
-                    )}
-                  </div>
-                </div>
+              {/* Status Indicator & Selector */}
+              <div className="bg-[#FAF3E0]/50 p-4 rounded-3xl border border-[#E8DCC4]/50 space-y-3 relative z-10">
+                <span className="text-[9px] font-bold text-[#B89E7E] uppercase block">Changer le Statut</span>
+                <select
+                  value={selectedEntry.status || "prospect enregistré"}
+                  onChange={(e) => handleStatusChangeClick(selectedEntry, e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-[#E8DCC4] rounded-xl text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-[#D4AF37]/20 cursor-pointer"
+                >
+                  <option value="prospect enregistré">Prospect Enregistré</option>
+                  <option value="paiement à vérifier">Paiement à Vérifier</option>
+                  <option value="paiement partiel">Paiement Partiel</option>
+                  <option value="inscription validée">Soldé & Validé</option>
+                  <option value="Confirmé">Confirmé</option>
+                  <option value="En attente">En attente</option>
+                  <option value="Incomplet">Incomplet</option>
+                </select>
               </div>
 
               {/* Financial section */}
@@ -583,7 +702,7 @@ export default function PipelinePage() {
                     <span className="font-bold text-primary">{selectedEntry.companyId}</span>
                   </div>
                   <div>
-                    <span className="text-[#B89E7E] block text-[10px]">Date d'opération</span>
+                    <span className="text-[#B89E7E] block text-[10px]">Date d&apos;opération</span>
                     <span className="font-bold text-primary">
                       {selectedEntry.date ? new Date(selectedEntry.date).toLocaleDateString('fr-FR') : "--"}
                     </span>

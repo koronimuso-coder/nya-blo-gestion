@@ -7,6 +7,7 @@ Ce document décrit le fonctionnement global, l'architecture technique et l'int�
 ## 1. Fonctionnalités Clés
 
 Le module permet de gérer et de suivre tout le cycle de vie du programme de parrainage :
+
 1. **Saisie Commerciale Intégrée** : Lors de chaque saisie d'un apprenant (dans [EntryModal.tsx](file:///c:/Users/NYAMMA/NB%20GEST/src/components/dashboard/EntryModal.tsx)), la commerciale indique si l'apprenant possède un code. Le code est vérifié instantanément et l'apprenant est lié au parrain après confirmation.
 2. **Scan de Code QR** : Un simulateur interactif de scan QR permet d'authentifier les codes issus des coupons imprimés ou mobiles.
 3. **Mise à Jour Dynamique de la Progression** : Le compteur du parrain (de 0/5 à 5/5) est recalculé dynamiquement sur la base des inscriptions réelles ayant le statut `"inscription validée"` ou `"Confirmé"`.
@@ -31,6 +32,7 @@ graph TD
 ```
 
 ### Emplacement des Fichiers
+
 - **Logique Métier & Calculs** : [referral.ts](file:///c:/Users/NYAMMA/NB%20GEST/src/lib/referral.ts)
 - **Formulaire de Saisie** : [EntryModal.tsx](file:///c:/Users/NYAMMA/NB%20GEST/src/components/dashboard/EntryModal.tsx)
 - **Liste des Points Journaliers** : [page.tsx](file:///c:/Users/NYAMMA/NB%20GEST/src/app/dashboard/entries/page.tsx)

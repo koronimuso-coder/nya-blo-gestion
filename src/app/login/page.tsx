@@ -6,7 +6,7 @@ import { auth } from "@/lib/firebase/config";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { ShieldCheck, Mail, Lock, Loader2, ArrowRight, Sparkles, Eye, EyeOff, KeyRound, CheckCircle, Home } from "lucide-react";
+import { ShieldCheck, Mail, Lock, Loader2, ArrowRight, Sparkles, Eye, EyeOff, KeyRound, CheckCircle, Home, Gift } from "lucide-react";
 import toast from "react-hot-toast";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -222,12 +222,14 @@ export default function LoginPage() {
             <KeyRound className="w-4 h-4 inline mr-2" />Mot de passe oublié ?
           </button>
 
-          <div className="form-element mt-8 flex items-center gap-4">
-            <div className="h-px flex-1 bg-[#E8DCC4]/30" />
-            <Link href="/" className="text-xs text-slate-400 hover:text-[#A66037] transition-colors flex items-center gap-1.5">
-              <Home className="w-3.5 h-3.5" /> Accueil
+          <div className="form-element mt-8 flex items-center justify-center gap-4 text-xs font-semibold">
+            <Link href="/" className="text-slate-400 hover:text-[#A66037] transition-colors flex items-center gap-1.5">
+              <Home className="w-3.5 h-3.5" /> Retour à l&apos;accueil
             </Link>
-            <div className="h-px flex-1 bg-[#E8DCC4]/30" />
+            <span className="text-slate-300">•</span>
+            <Link href="/parrainage" className="text-[#D4AF37] hover:underline transition-colors flex items-center gap-1.5">
+              <Gift className="w-3.5 h-3.5" /> Espace Parrainage GALF
+            </Link>
           </div>
 
           <p className="form-element mt-6 text-center text-slate-400 text-sm">

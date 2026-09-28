@@ -16,7 +16,8 @@ import {
   ChevronRight,
   Gift,
   X,
-  Layers
+  Layers,
+  ExternalLink
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { auth, db } from "@/lib/firebase/config";
@@ -135,7 +136,19 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         })}
       </nav>
 
-      <div className="p-6 mt-auto border-t border-white/5">
+      <div className="p-6 mt-auto border-t border-white/5 space-y-3">
+        <Link
+          href="/"
+          target="_blank"
+          className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-[#E8DCC4] hover:text-[#D4AF37] transition-all group border border-white/5"
+        >
+          <span className="flex items-center gap-2 font-semibold">
+            <ShieldCheck className="w-4 h-4 text-[#D4AF37]" />
+            Site & Parrainage
+          </span>
+          <ExternalLink className="w-3.5 h-3.5 text-[#B89E7E] group-hover:text-[#D4AF37] transition-colors" />
+        </Link>
+
         <div className="bg-[#5C3D2E]/30 p-4 rounded-2xl mb-4 border border-[#5C3D2E]/50">
            <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-[#A66037] flex items-center justify-center text-lg font-bold relative">

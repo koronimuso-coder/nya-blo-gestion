@@ -24,7 +24,9 @@ erDiagram
 ## 2. Dictionnaire des Données et Schemas
 
 ### A. Collection `referral_campaigns`
+
 Contient les campagnes temporelles de parrainage.
+
 * **ID Document** : Généré par Firestore ou personnalisé (ex: `campagne_2026`).
 
 | Champ | Type | Description / Contraintes |
@@ -40,7 +42,9 @@ Contient les campagnes temporelles de parrainage.
 ---
 
 ### B. Collection `referral_members`
+
 Représente les parrains inscrits au programme.
+
 * **ID Document** : Généré (ex: `member_1718723901823`).
 
 | Champ | Type | Description / Contraintes |
@@ -58,7 +62,8 @@ Représente les parrains inscrits au programme.
 | `recordedBy` | `string` | UID de l'utilisateur ayant saisi le parrain |
 | `stats` | `map` | Sous-structure contenant les indicateurs clés (voir ci-dessous) |
 
-#### Structure `stats` :
+#### Structure `stats`
+
 * `totalReferred` (`number`) : Nombre total de filleuls enregistrés (tous statuts).
 * `pendingCount` (`number`) : Nombre de filleuls en attente (inscriptions non encore validées).
 * `validatedCount` (`number`) : Nombre de filleuls validés (statuts `"Confirmé"`, `"inscription validée"`).
@@ -67,7 +72,9 @@ Représente les parrains inscrits au programme.
 ---
 
 ### C. Collection `referral_codes`
+
 Contient l'indexation des codes pour une recherche directe ultra-rapide.
+
 * **ID Document** : Le code parrain lui-même en MAJUSCULES (ex: `MAMADOU26`). *Garantit l'unicité globale du code parrain.*
 
 | Champ | Type | Description / Contraintes |
@@ -82,7 +89,9 @@ Contient l'indexation des codes pour une recherche directe ultra-rapide.
 ---
 
 ### D. Collection `referral_attributions`
+
 Représente le rattachement d'un filleul (une saisie d'inscription) à un parrain.
+
 * **ID Document** : Généré par Firestore.
 
 | Champ | Type | Description / Contraintes |
@@ -105,7 +114,9 @@ Représente le rattachement d'un filleul (une saisie d'inscription) à un parrai
 ---
 
 ### E. Collection `referral_rewards`
+
 Gère les dossiers de récompenses (1 formation offerte tous les 5 filleuls validés).
+
 * **ID Document** : Généré par Firestore.
 
 | Champ | Type | Description / Contraintes |
@@ -122,7 +133,8 @@ Gère les dossiers de récompenses (1 formation offerte tous les 5 filleuls vali
 | `createdAt` | `string` | Timestamp ISO de création |
 | `qualifyingEntries` | `array (string)` | Liste des `entryId` ayant qualifié la récompense |
 
-#### Cycle de vie des statuts de récompense (`status`) :
+#### Cycle de vie des statuts de récompense (`status`)
+
 1. `eligible` : Créée automatiquement par le système lorsque la progression atteint un multiple de 5 validés.
 2. `verification_en_cours` : En cours d'analyse anti-fraude par le superviseur.
 3. `informations_requises` : Commerciale sollicitée pour clarification.
@@ -136,6 +148,7 @@ Gère les dossiers de récompenses (1 formation offerte tous les 5 filleuls vali
 ---
 
 ### F. Collection `referral_status_history`
+
 Historique complet des changements de statuts sur les attributions.
 
 | Champ | Type | Description |
@@ -150,6 +163,7 @@ Historique complet des changements de statuts sur les attributions.
 ---
 
 ### G. Collection `referral_audit_logs`
+
 Logs globaux pour le suivi d'activité et la conformité administrative.
 
 | Champ | Type | Description |

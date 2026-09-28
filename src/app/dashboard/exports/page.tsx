@@ -11,7 +11,8 @@ import {
   Sparkles,
   Download,
   Loader2,
-  CheckCircle
+  CheckCircle,
+  Calendar
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import gsap from "gsap";
@@ -25,6 +26,27 @@ import { logAction } from "@/lib/audit";
 import { useEffect } from "react";
 import { jsPDF } from "jspdf";
 import autoTable, { applyPlugin } from "jspdf-autotable";
+
+const MONTHS_LIST = [
+  "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", 
+  "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
+];
+
+function getEntryYearMonth(entry: { date?: string; createdAt?: string }): { year: number; month: number } | null {
+  if (entry.date && typeof entry.date === "string") {
+    const parts = entry.date.split("-");
+    if (parts.length >= 2) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      if (!isNaN(y) && !isNaN(m)) return { year: y, month: m };
+    }
+  }
+  const dateStr = entry.date || entry.createdAt;
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  return { year: d.getFullYear(), month: d.getMonth() };
+}
 
 export default function ExportsPage() {
   const { profile } = useAuth();
@@ -40,6 +62,8 @@ export default function ExportsPage() {
 
   // Filter states
   const [selectedPeriod, setSelectedPeriod] = useState("Mois en cours");
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedCompany, setSelectedCompany] = useState("Toutes les entreprises");
   const [companies, setCompanies] = useState<string[]>([]);
   const [checkedFields, setCheckedFields] = useState<Record<string, boolean>>({
@@ -86,6 +110,20 @@ export default function ExportsPage() {
     tl.from(".config-section", { y: 20, opacity: 0, duration: 0.6 }, "-=0.2");
   }, { scope: container });
 
+  const getPeriodLabel = () => {
+    if (selectedPeriod === "Par mois spécifique") {
+      return `${MONTHS_LIST[selectedMonth]} ${selectedYear}`;
+    }
+    if (selectedPeriod === "Mois en cours") {
+      return `Mois en cours (${MONTHS_LIST[new Date().getMonth()]} ${new Date().getFullYear()})`;
+    }
+    if (selectedPeriod === "Mois précédent") {
+      const prevDate = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
+      return `Mois précédent (${MONTHS_LIST[prevDate.getMonth()]} ${prevDate.getFullYear()})`;
+    }
+    return selectedPeriod;
+  };
+
   const fetchEntries = async () => {
     const q = query(collection(db, "daily_entries"), orderBy("date", "desc"));
     const snapshot = await getDocs(q);
@@ -108,29 +146,39 @@ export default function ExportsPage() {
       filtered = filtered.filter(e => e.companyId === selectedCompany);
     }
 
-    // 2. Filter by Period
+    // 2. Filter by Period & Month
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOf60Days = new Date();
-    startOf60Days.setDate(now.getDate() - 60);
-    const currentQuarter = Math.floor(now.getMonth() / 3);
-    const startOfQuarter = new Date(now.getFullYear(), currentQuarter * 3, 1);
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    const prevDate = new Date(currentYear, currentMonth - 1, 1);
+    const prevYear = prevDate.getFullYear();
+    const prevMonth = prevDate.getMonth();
+    const currentQuarter = Math.floor(currentMonth / 3);
 
     filtered = filtered.filter(e => {
-      const dateVal = e.date ? new Date(e.date) : (e.createdAt ? new Date(e.createdAt) : null);
-      if (!dateVal) return true;
+      if (selectedPeriod === "Toutes les données") return true;
+
+      const ym = getEntryYearMonth(e);
+      if (!ym) return false;
 
       if (selectedPeriod === "Mois en cours") {
-        return dateVal >= startOfMonth;
+        return ym.year === currentYear && ym.month === currentMonth;
+      } else if (selectedPeriod === "Mois précédent") {
+        return ym.year === prevYear && ym.month === prevMonth;
+      } else if (selectedPeriod === "Par mois spécifique") {
+        return ym.year === selectedYear && ym.month === selectedMonth;
       } else if (selectedPeriod === "60 derniers jours") {
-        return dateVal >= startOf60Days;
+        const d = e.date ? new Date(e.date + "T12:00:00") : (e.createdAt ? new Date(e.createdAt) : null);
+        if (!d) return false;
+        const startOf60Days = new Date();
+        startOf60Days.setDate(now.getDate() - 60);
+        return d >= startOf60Days;
       } else if (selectedPeriod === "Trimestre en cours") {
-        return dateVal >= startOfQuarter;
-      } else if (selectedPeriod === "Année " + now.getFullYear()) {
-        return dateVal >= startOfYear;
+        return ym.year === currentYear && Math.floor(ym.month / 3) === currentQuarter;
+      } else if (selectedPeriod === "Année " + currentYear) {
+        return ym.year === currentYear;
       }
-      return true; // Toutes les données
+      return true;
     });
 
     return filtered;
@@ -175,7 +223,7 @@ export default function ExportsPage() {
       doc.text(`NYA BLO — RAPPORT D'ACTIVITÉ`, 14, 18);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
-      doc.text(`Filtres : Filiale = ${selectedCompany} | Période = ${selectedPeriod}`, 14, 26);
+      doc.text(`Filtres : Filiale = ${selectedCompany} | Période = ${getPeriodLabel()}`, 14, 26);
       doc.text(`Généré le : ${new Date().toLocaleString('fr-FR')} par ${profile?.email}`, 14, 32);
       doc.setTextColor(0, 0, 0);
 
@@ -232,14 +280,15 @@ export default function ExportsPage() {
       
       doc.text(summaryText, 14, currentY + 6);
 
-      doc.save(`NYA_BLO_Rapport_${new Date().toISOString().split('T')[0]}.pdf`);
+      const periodSlug = getPeriodLabel().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+      doc.save(`NYA_BLO_Rapport_${periodSlug}_${new Date().toISOString().split('T')[0]}.pdf`);
       setLastExport({ format: "PDF", date: new Date().toLocaleString('fr-FR') });
       
       await logAction(
         profile?.uid,
         profile?.email,
         "export_pdf",
-        `Génération du rapport PDF (Période: ${selectedPeriod}, Filiale: ${selectedCompany})`,
+        `Génération du rapport PDF (Période: ${getPeriodLabel()}, Filiale: ${selectedCompany})`,
         selectedCompany
       );
 
@@ -292,14 +341,15 @@ export default function ExportsPage() {
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Activités NYA BLO");
       
-      XLSX.writeFile(workbook, `NYA_BLO_Archives_${new Date().toISOString().split('T')[0]}.xlsx`);
+      const periodSlug = getPeriodLabel().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+      XLSX.writeFile(workbook, `NYA_BLO_Archives_${periodSlug}_${new Date().toISOString().split('T')[0]}.xlsx`);
       setLastExport({ format: "XLSX", date: new Date().toLocaleString('fr-FR') });
       
       await logAction(
         profile?.uid,
         profile?.email,
         "export_xlsx",
-        `Génération de l'archive Excel (Période: ${selectedPeriod}, Filiale: ${selectedCompany})`,
+        `Génération de l'archive Excel (Période: ${getPeriodLabel()}, Filiale: ${selectedCompany})`,
         selectedCompany
       );
 
@@ -316,7 +366,7 @@ export default function ExportsPage() {
     setIsGenerating("LINK");
     try {
       const hash = Math.random().toString(36).substring(2, 10).toUpperCase();
-      const shareUrl = `https://nya-blo-gestion.vercel.app/api/share/export?id=${hash}&period=${encodeURIComponent(selectedPeriod)}&company=${encodeURIComponent(selectedCompany)}`;
+      const shareUrl = `https://nya-blo-gestion.vercel.app/api/share/export?id=${hash}&period=${encodeURIComponent(getPeriodLabel())}&company=${encodeURIComponent(selectedCompany)}`;
       
       await navigator.clipboard.writeText(shareUrl);
       toast.success("✅ Lien de partage copié dans le presse-papiers !");
@@ -326,7 +376,7 @@ export default function ExportsPage() {
         profile?.uid,
         profile?.email,
         "export_link",
-        `Génération du lien de partage (Période: ${selectedPeriod}, Filiale: ${selectedCompany})`,
+        `Génération du lien de partage (Période: ${getPeriodLabel()}, Filiale: ${selectedCompany})`,
         selectedCompany
       );
     } catch (err) {
@@ -367,7 +417,7 @@ export default function ExportsPage() {
         profile?.uid,
         profile?.email,
         "export_email",
-        `Envoi du rapport par email à ${emailInput} (Période: ${selectedPeriod}, Filiale: ${selectedCompany})`,
+        `Envoi du rapport par email à ${emailInput} (Période: ${getPeriodLabel()}, Filiale: ${selectedCompany})`,
         selectedCompany
       );
     }, 1800);
@@ -459,21 +509,52 @@ export default function ExportsPage() {
                      <select 
                        value={selectedPeriod}
                        onChange={(e) => setSelectedPeriod(e.target.value)}
-                       className="w-full p-5 rounded-2xl bg-[#FAF3E0]/30 border-2 border-transparent focus:border-[#D4AF37] outline-none font-bold text-[#5C3D2E] appearance-none cursor-pointer"
+                       className="w-full p-5 rounded-2xl bg-[#FAF3E0]/30 border-2 border-transparent focus:border-[#D4AF37] outline-none font-bold text-[#5C3D2E] cursor-pointer"
                      >
-                        <option>Mois en cours</option>
-                        <option>60 derniers jours</option>
-                        <option>Trimestre en cours</option>
-                        <option>Année {new Date().getFullYear()}</option>
-                        <option>Toutes les données</option>
+                        <option value="Mois en cours">Mois en cours ({MONTHS_LIST[new Date().getMonth()]} {new Date().getFullYear()})</option>
+                        <option value="Mois précédent">Mois précédent</option>
+                        <option value="Par mois spécifique">Par mois spécifique (choisir le mois)</option>
+                        <option value="60 derniers jours">60 derniers jours</option>
+                        <option value="Trimestre en cours">Trimestre en cours</option>
+                        <option value={`Année ${new Date().getFullYear()}`}>Année {new Date().getFullYear()}</option>
+                        <option value="Toutes les données">Toutes les données (Historique complet)</option>
                      </select>
+
+                     {selectedPeriod === "Par mois spécifique" && (
+                       <div className="grid grid-cols-2 gap-3 pt-2">
+                         <div className="space-y-1">
+                           <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-wider pl-1">Mois</label>
+                           <select
+                             value={selectedMonth}
+                             onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                             className="w-full p-3.5 rounded-xl bg-[#FAF3E0]/50 border border-[#E8DCC4] focus:border-[#D4AF37] outline-none font-bold text-sm text-[#5C3D2E] cursor-pointer"
+                           >
+                             {MONTHS_LIST.map((m, idx) => (
+                               <option key={m} value={idx}>{m}</option>
+                             ))}
+                           </select>
+                         </div>
+                         <div className="space-y-1">
+                           <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-wider pl-1">Année</label>
+                           <select
+                             value={selectedYear}
+                             onChange={(e) => setSelectedYear(Number(e.target.value))}
+                             className="w-full p-3.5 rounded-xl bg-[#FAF3E0]/50 border border-[#E8DCC4] focus:border-[#D4AF37] outline-none font-bold text-sm text-[#5C3D2E] cursor-pointer"
+                           >
+                             {[2024, 2025, 2026, 2027, 2028].map(yr => (
+                               <option key={yr} value={yr}>{yr}</option>
+                             ))}
+                           </select>
+                         </div>
+                       </div>
+                     )}
                   </div>
                   <div className="space-y-2">
                      <label className="text-[10px] font-bold text-[#B89E7E] uppercase tracking-widest pl-1">Entreprise</label>
                      <select 
                        value={selectedCompany}
                        onChange={(e) => setSelectedCompany(e.target.value)}
-                       className="w-full p-5 rounded-2xl bg-[#FAF3E0]/30 border-2 border-transparent focus:border-[#D4AF37] outline-none font-bold text-[#5C3D2E] appearance-none cursor-pointer"
+                       className="w-full p-5 rounded-2xl bg-[#FAF3E0]/30 border-2 border-transparent focus:border-[#D4AF37] outline-none font-bold text-[#5C3D2E] cursor-pointer"
                      >
                         <option value="Toutes les entreprises">Toutes les entreprises</option>
                         {companies.map(name => (
@@ -509,7 +590,7 @@ export default function ExportsPage() {
                   {isGenerating ? (
                     <span className="flex items-center gap-3"><Loader2 className="w-5 h-5 animate-spin" /> Génération en cours...</span>
                   ) : (
-                    <span className="flex items-center gap-3"><FileText className="w-5 h-5" /> Générer le Rapport Complet (PDF)</span>
+                    <span className="flex items-center gap-3"><FileText className="w-5 h-5" /> Générer le Rapport Complet PDF ({getPeriodLabel()})</span>
                   )}
                </Button>
             </div>
@@ -587,7 +668,7 @@ export default function ExportsPage() {
                   <div className="text-gray-600 space-y-1.5 pt-1">
                     <p className="font-semibold text-[#5C3D2E]">Aperçu du contenu :</p>
                     <p>Bonjour,</p>
-                    <p>Veuillez trouver ci-joint le rapport consolidé pour l'entreprise <strong>{selectedCompany}</strong> sur la période <strong>{selectedPeriod}</strong>.</p>
+                    <p>Veuillez trouver ci-joint le rapport consolidé pour l'entreprise <strong>{selectedCompany}</strong> sur la période <strong>{getPeriodLabel()}</strong>.</p>
                     <p>Ce document contient les données du chiffre d'affaires, recouvrements, et modes de paiement.</p>
                     <p>Cordialement,<br/>L'équipe administrative NYA BLO.</p>
                   </div>

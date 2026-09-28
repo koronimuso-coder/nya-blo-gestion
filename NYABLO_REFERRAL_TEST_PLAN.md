@@ -7,11 +7,13 @@ Ce document décrit les cas de test fonctionnels et techniques pour la validatio
 ## 1. Tests d'Intégration Automatisés (CLI)
 
 Les tests backend sont exécutables via la commande :
+
 ```bash
 npx tsx src/scripts/test-referral.ts
 ```
 
 Ils valident automatiquement les scénarios d'attribution de la base de données :
+
 * **Test 1** : Refus de rattachement si aucun code parrain n'est fourni.
 * **Test 2** : Acceptation du rattachement avec le code valide `MAMADOU26`.
 * **Test 3** : Refus si le code fourni est inexistant (ex: `INCONNU99`).
@@ -25,12 +27,13 @@ Ils valident automatiquement les scénarios d'attribution de la base de données
 ## 2. Scénarios de Test Fonctionnels (Interface Utilisateur)
 
 ### Cas de Test UI-01 : Enregistrement d'un nouveau parrain
-* **Action** : 
+
+* **Action** :
   1. Aller sur le tableau de bord de parrainage.
   2. Cliquer sur **"Enregistrer un Parrain"**.
   3. Remplir les champs obligatoires (ex: Nom: `Koné`, Prénom: `Adama`, Téléphone: `+2250708091011`, Code: `ADAMA26`).
   4. Valider le formulaire.
-* **Résultat Attendu** : 
+* **Résultat Attendu** :
   * Le parrain apparaît immédiatement dans l'onglet "Membres & Codes".
   * Le code `ADAMA26` est enregistré dans la collection `referral_codes`.
   * Un message de succès vert s'affiche.
@@ -38,6 +41,7 @@ Ils valident automatiquement les scénarios d'attribution de la base de données
 ---
 
 ### Cas de Test UI-02 : Saisie d'une inscription parrainée (Commerciale)
+
 * **Action** :
   1. Ouvrir le modal d'inscription (Point Journalier).
   2. Cocher "Oui" à la question parrainage.
@@ -49,6 +53,7 @@ Ils valident automatiquement les scénarios d'attribution de la base de données
 ---
 
 ### Cas de Test UI-03 : Blocage de l'auto-parrainage et doublons
+
 * **Action** :
   1. Créer une inscription.
   2. Renseigner comme téléphone de l'apprenant le numéro de Mamadou Diallo (`+2250707070707`).
@@ -60,6 +65,7 @@ Ils valident automatiquement les scénarios d'attribution de la base de données
 ---
 
 ### Cas de Test UI-04 : Traitement d'un dossier de récompense (Admin)
+
 * **Action** :
   1. Aller sur l'onglet **"Contrôle des Récompenses"**.
   2. Cliquer sur **"Traiter le dossier"** sur une récompense éligible.
@@ -78,14 +84,18 @@ Ils valident automatiquement les scénarios d'attribution de la base de données
 L'API de connexion externe (`/api/referral`) peut être testée en local avec un outil d'API (Postman/cURL) :
 
 ### Cas de Test API-01 : Vérification de code (GET)
+
 * **Requête** :
+
   ```http
   GET http://localhost:3000/api/referral?code=MAMADOU26&studentPhone=+2250808080808
   Authorization: Bearer nya-blo-galf-secure-token-2026
   ```
+
 * **Résultat Attendu** :
   * Code HTTP 200.
   * Réponse JSON :
+
     ```json
     {
       "status": "valid",
@@ -99,7 +109,9 @@ L'API de connexion externe (`/api/referral`) peut être testée en local avec un
     ```
 
 ### Cas de Test API-02 : Enregistrement de pré-inscription (POST)
+
 * **Requête** :
+
   ```http
   POST http://localhost:3000/api/referral
   Authorization: Bearer nya-blo-galf-secure-token-2026
@@ -115,6 +127,7 @@ L'API de connexion externe (`/api/referral`) peut être testée en local avec un
     "modePaiement": "Wave"
   }
   ```
+
 * **Résultat Attendu** :
   * Code HTTP 201 Created.
   * Création d'une ligne dans `daily_entries` au statut `"prospect enregistré"`.

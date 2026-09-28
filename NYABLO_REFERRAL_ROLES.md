@@ -7,6 +7,7 @@ Ce document définit les permissions d'accès et les actions autorisées pour ch
 ## 1. Rôles Applicatifs
 
 Le portail de gestion utilise quatre niveaux d'habilitation :
+
 1. **Super Admin** : Contrôle total du système.
 2. **Admin Entreprise** : Administration de l'entreprise (GALF Formation).
 3. **Superviseur** : Responsable d'équipe ou commerciale senior.
@@ -69,6 +70,7 @@ service cloud.firestore {
 ## 4. Mesures Anti-Fraude et Journalisation (Logs)
 
 Toutes les actions critiques de gestion des rôles ou de statut de parrainage font l'objet d'un audit de sécurité consigné dans `referral_audit_logs` :
+
 * **Modification de statut d'un filleul** par un admin : Saisie obligatoire du motif de modification.
 * **Validation d'un dossier de récompense** : Le système enregistre l'adresse email de l'administrateur ayant pris la décision et le motif.
 * **Auto-parrainage et doublons** : Bloqués au niveau de l'interface et de l'API avec notification d'alerte dans l'onglet anti-fraude accessible uniquement aux Superviseurs et Administrateurs.
